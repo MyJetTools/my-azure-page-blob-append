@@ -253,6 +253,7 @@ impl PageBlobAppendCache {
         &mut self,
         page_blob: &mut T,
         payloads: &Vec<Vec<u8>>,
+        max_pages_to_write_single_round_trip: usize,
     ) -> Result<(), PageBlobAppendCacheError> {
         self.check_init_status_for_write_operation(page_blob)
             .await?;
@@ -277,7 +278,12 @@ impl PageBlobAppendCache {
         );
 
         page_blob
-            .auto_ressize_and_save_pages(page_no, payload_to_upload, self.blob_auto_resize_in_pages)
+            .auto_ressize_and_save_pages(
+                page_no,
+                max_pages_to_write_single_round_trip,
+                payload_to_upload,
+                self.blob_auto_resize_in_pages,
+            )
             .await?;
 
         self.blob_position += payload_len;
