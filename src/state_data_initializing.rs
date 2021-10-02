@@ -35,7 +35,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataInitializing<TMyPageBlob> {
             blob_position: 0,
             settings,
             blob_size_in_pages: not_initialized.blob_size_in_pages,
-            buffer: PageBlobBuffer::new(BLOB_PAGE_SIZE * settings.cache_capacity_in_pages),
+            buffer: PageBlobBuffer::new(BLOB_PAGE_SIZE, settings.cache_capacity_in_pages),
         }
     }
 

@@ -20,7 +20,7 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReaderWithCache<TPageBlob> {
             capacity_in_pages,
             current_page: 0,
             position: 0,
-            cache: PageBlobBuffer::new(BLOB_PAGE_SIZE * capacity_in_pages),
+            cache: PageBlobBuffer::new(BLOB_PAGE_SIZE, capacity_in_pages),
             blob_size: None,
             blob_size_in_pages: 0,
         }

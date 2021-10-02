@@ -1,13 +1,19 @@
 pub struct PageBlobBuffer {
     buffer: Vec<u8>,
+    pub last_pages: Vec<u8>,
     position: usize,
+    pub page_size: usize,
 }
 
 impl PageBlobBuffer {
-    pub fn new(capacity_size: usize) -> Self {
+    pub fn new(page_size: usize, max_page_count: usize) -> Self {
+        let capacity_size = page_size * max_page_count;
+
         let result = Self {
             buffer: Vec::with_capacity(capacity_size),
+            last_pages: Vec::with_capacity(page_size * 2),
             position: 0,
+            page_size: page_size
         };
         result
     }
@@ -24,6 +30,17 @@ impl PageBlobBuffer {
     fn advance_position(&mut self, size: usize) {
         self.position += size;
         if self.position == self.buffer.len() {
+            self.last_pages.clear();
+            
+            let last_page_capacity = self.page_size * 2;
+
+            if self.buffer.len() >= last_page_capacity {
+                let slice = &self.buffer[self.buffer.len()-last_page_capacity..self.buffer.len()];
+                self.last_pages.copy_from_slice(slice);
+            } else {
+                self.last_pages.copy_from_slice(&self.buffer);
+            }
+
             self.buffer.clear();
             self.position = 0;
         }
@@ -55,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_if_we_have_enough_to_copy() {
-        let mut buffer = PageBlobBuffer::new(8);
+        let mut buffer = PageBlobBuffer::new(8, 1);
 
         let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
         buffer.upload(&src);
@@ -71,7 +88,7 @@ mod tests {
 
     #[test]
     fn test_if_we_have_not_enough_to_copy() {
-        let mut buffer = PageBlobBuffer::new(8);
+        let mut buffer = PageBlobBuffer::new(8, 1);
 
         let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
         buffer.upload(&src);
@@ -90,7 +107,7 @@ mod tests {
 
     #[test]
     fn test_if_we_have_exact_amount_to_copy() {
-        let mut buffer = PageBlobBuffer::new(8);
+        let mut buffer = PageBlobBuffer::new(8, 1);
 
         let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
         buffer.upload(&src);
@@ -107,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_several_copy() {
-        let mut buffer = PageBlobBuffer::new(8);
+        let mut buffer = PageBlobBuffer::new(8, 1);
 
         let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
         buffer.upload(&src);
