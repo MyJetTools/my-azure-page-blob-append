@@ -3,6 +3,7 @@ use my_azure_storage_sdk::AzureStorageError;
 #[derive(Debug)]
 pub enum PageBlobAppendCacheError {
     NotInitialized,
+    Corrupted,
     MaxSizeProtection { limit: usize, size_from_blob: usize },
     AzureStorageError(AzureStorageError),
 }

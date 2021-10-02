@@ -1,4 +1,82 @@
+use std::time::Duration;
+
+use my_azure_page_blob::MyPageBlob;
+use my_azure_storage_sdk::AzureStorageError;
+
 use super::page_blob_buffer::PageBlobBuffer;
+
+pub async fn get_available_pages_amount<TMyPageBlob: MyPageBlob>(
+    page_blob: &mut TMyPageBlob,
+) -> Result<usize, AzureStorageError> {
+    let mut attempt_no = 1;
+
+    loop {
+        let result = page_blob.get_available_pages_amount().await;
+
+        if result.is_ok() {
+            return result;
+        }
+
+        let err = result.err().unwrap();
+
+        match &err {
+            AzureStorageError::ContainerNotFound => {
+                crate::page_blob_utils::create_container_with_retires(page_blob).await?;
+            }
+            AzureStorageError::HyperError { err: _ } => {
+                println!(
+                    "Can not execute get_available_pages_amount because of  {:?}. Attempt {} Retrying",
+                    err, attempt_no
+                );
+                attempt_no += 1;
+
+                if attempt_no > 5 {
+                    return Err(err);
+                }
+
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+            _ => {
+                return Err(err);
+            }
+        }
+    }
+}
+
+pub async fn create_container_with_retires<TMyPageBlob: MyPageBlob>(
+    page_blob: &mut TMyPageBlob,
+) -> Result<(), AzureStorageError> {
+    let mut attempt_no = 1;
+
+    loop {
+        let result = page_blob.create_container_if_not_exist().await;
+
+        if result.is_ok() {
+            return result;
+        }
+
+        let err = result.err().unwrap();
+
+        match &err {
+            AzureStorageError::HyperError { err: _ } => {
+                println!(
+                    "Can not execute create_container_with_retires because of  {:?}. Attempt {} Retrying",
+                    err, attempt_no
+                );
+                attempt_no += 1;
+
+                if attempt_no > 5 {
+                    return Err(err);
+                }
+
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+            _ => {
+                return Err(err);
+            }
+        }
+    }
+}
 
 pub fn compile_payloads(payloads: &Vec<Vec<u8>>) -> Vec<u8> {
     let mut result = Vec::new();
@@ -70,6 +148,8 @@ pub fn extend_result_buffer_and_cahce(
     new_blob_position: usize,
     page_size: usize,
 ) {
+    todo!("Implement")
+    /*
     result_buffer.extend(&data_from_blob[..data_size]);
 
     let pages_to_cut = get_pages_to_cut(data_size, page_size);
@@ -82,6 +162,7 @@ pub fn extend_result_buffer_and_cahce(
         - get_page_no_from_page_blob_position(new_blob_position, page_size) * page_size;
 
     buffer.init_buffer_and_set_position(bytes_after_cut, buffer_position as usize);
+    */
 }
 
 pub fn get_last_page<'t>(data: &'t Vec<u8>, page_size: usize) -> &'t [u8] {

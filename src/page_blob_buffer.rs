@@ -1,17 +1,13 @@
-use super::page_blob_utils;
-
 pub struct PageBlobBuffer {
     buffer: Vec<u8>,
     position: usize,
-    page_size: usize,
 }
 
 impl PageBlobBuffer {
-    pub fn new(page_size: usize, capacity_in_pages: usize) -> Self {
+    pub fn new(capacity_size: usize) -> Self {
         let result = Self {
-            buffer: Vec::with_capacity(capacity_in_pages * page_size),
+            buffer: Vec::with_capacity(capacity_size),
             position: 0,
-            page_size,
         };
         result
     }
@@ -20,114 +16,36 @@ impl PageBlobBuffer {
         self.buffer.len() - self.position
     }
 
-    pub fn get_next_message_size(&mut self) -> Option<usize> {
-        let len = self.available_to_read_size();
-
-        if len < 4 {
-            self.gc();
-            return None;
-        }
-
-        let mut array = [0u8; 4];
-        let slice = &self.buffer[self.position..self.position + 4];
-
-        array.copy_from_slice(slice);
-
-        let result = u32::from_le_bytes(array);
-
-        if result > 0 {
-            self.position += 4;
-        }
-
-        Some(result as usize)
+    pub fn upload(&mut self, buffer: &[u8]) {
+        self.buffer.extend(buffer);
     }
 
-    pub fn get_payload<'t>(&'t mut self, data_size: usize) -> Option<&'t [u8]> {
-        let len = self.available_to_read_size();
-
-        if len < data_size {
-            return None;
-        }
-
-        let result = &self.buffer[self.position..self.position + data_size];
-
-        self.position += data_size;
-        return Some(result);
-    }
-
-    pub fn get_remaining_payload<'t>(&'t mut self) -> &'t [u8] {
-        let data_size = self.available_to_read_size();
-
-        let result = &self.buffer[self.position..self.position + data_size];
-
-        self.position += data_size;
-
-        return result;
-    }
-
-    pub fn get_buffer_size_to_append(&self) -> usize {
-        self.buffer.capacity() - self.buffer.len()
-    }
-
-    fn gc(&mut self) {
-        if self.position < self.page_size {
-            return;
-        }
-
-        if self.position == self.capacity() {
-            self.position = 0;
+    #[inline]
+    fn advance_position(&mut self, size: usize) {
+        self.position += size;
+        if self.position == self.buffer.len() {
             self.buffer.clear();
-            return;
+            self.position = 0;
+        }
+    }
+
+    pub fn copy_to(&mut self, data: &mut [u8]) -> usize {
+        let max_to_copy = self.available_to_read_size();
+
+        if data.len() <= max_to_copy {
+            let src = &self.buffer[self.position..self.position + data.len()];
+            data.copy_from_slice(src);
+            self.advance_position(data.len());
+            return data.len();
         }
 
-        let pages_to_gc = self.position / self.page_size;
+        let dest_data = &mut data[..max_to_copy];
 
-        let bytes_to_gc = pages_to_gc * self.page_size;
+        let src = &self.buffer[self.position..self.position + max_to_copy];
+        dest_data.copy_from_slice(src);
 
-        let slice_to_move = &self.buffer[bytes_to_gc..].to_vec();
-
-        self.buffer[..slice_to_move.len()].copy_from_slice(slice_to_move);
-
-        let current_len = self.buffer.len();
-
-        unsafe { self.buffer.set_len(current_len - bytes_to_gc) }
-
-        self.position -= bytes_to_gc;
-    }
-
-    pub fn append(&mut self, items: &[u8]) {
-        self.gc();
-        let new_size = self.buffer.len() + items.len();
-        if new_size > self.buffer.capacity() {
-            panic!("We are trying to insert the array which will make data size {} which is bigger than capacity can hold {}", new_size, self.buffer.capacity());
-        }
-
-        self.buffer.extend(items);
-    }
-
-    pub fn init_buffer_and_set_position(&mut self, items: &[u8], position: usize) {
-        self.buffer.clear();
-        self.buffer.extend(items);
-        self.position = position;
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.buffer.capacity()
-    }
-
-    pub fn get_last_page(&self) -> &[u8] {
-        let page_no =
-            page_blob_utils::get_page_no_from_page_blob_position(self.position, self.page_size);
-
-        let pages_start = page_no * self.page_size;
-
-        &self.buffer[pages_start..self.position]
-    }
-
-    pub fn set_last_page(&mut self, last_page: &[u8]) {
-        self.buffer.clear();
-        self.buffer.extend(last_page);
-        self.position = last_page.len();
+        self.advance_position(max_to_copy);
+        return max_to_copy;
     }
 }
 
@@ -136,116 +54,92 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_buffer_size_to_append() {
-        let mut buffer = PageBlobBuffer::new(16, 2);
+    fn test_if_we_have_enough_to_copy() {
+        let mut buffer = PageBlobBuffer::new(8);
 
-        let buffer_size_to_append = buffer.get_buffer_size_to_append();
+        let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
+        buffer.upload(&src);
 
-        assert_eq!(16 * 2, buffer_size_to_append);
+        let mut dest = [255u8, 255u8, 255u8];
 
-        buffer.append(&[0u8, 0u8]);
+        let copied = buffer.copy_to(&mut dest);
 
-        let buffer_size_to_append = buffer.get_buffer_size_to_append();
-
-        assert_eq!(16 * 2 - 2, buffer_size_to_append);
+        assert_eq!(copied, 3);
+        assert_eq!(dest, [0u8, 1u8, 2u8]);
+        assert_eq!(buffer.position, 3);
     }
 
     #[test]
-    fn test_flow_in_one_page() {
-        let mut buffer = PageBlobBuffer::new(16, 2);
+    fn test_if_we_have_not_enough_to_copy() {
+        let mut buffer = PageBlobBuffer::new(8);
 
-        buffer.append(&[
-            2u8, 0u8, 0u8, 0u8, 15u8, 16u8, //First Message
-            3u8, 0u8, 0u8, 0u8, 17u8, 18u8, 19u8, //Second Message
-            0u8, 0u8, 0u8, 0u8,
-        ]);
+        let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
+        buffer.upload(&src);
 
-        {
-            let msg_size = buffer.get_next_message_size().unwrap();
+        let mut dest = [
+            255u8, 255u8, 255u8, 255u8, 255u8, 255u8, 255u8, 255u8, 255u8,
+        ];
 
-            assert_eq!(msg_size, 2);
+        let copied = buffer.copy_to(&mut dest);
 
-            let buffer = buffer.get_payload(msg_size).unwrap();
+        assert_eq!(copied, 8);
+        assert_eq!(dest, [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 255u8]);
 
-            assert_eq!(buffer.len(), 2);
-            assert_eq!(buffer[0], 15);
-            assert_eq!(buffer[1], 16);
-        }
-
-        {
-            let msg_size = buffer.get_next_message_size().unwrap();
-
-            assert_eq!(msg_size, 3);
-
-            let buffer = buffer.get_payload(msg_size).unwrap();
-
-            assert_eq!(buffer.len(), 3);
-            assert_eq!(buffer[0], 17);
-            assert_eq!(buffer[1], 18);
-            assert_eq!(buffer[2], 19);
-        }
-
-        let msg_size = buffer.get_next_message_size().unwrap();
-
-        assert_eq!(msg_size, 0);
+        assert_eq!(buffer.position, 0);
     }
 
     #[test]
-    fn test_gc_case() {
-        let mut buffer = PageBlobBuffer::new(8, 2);
+    fn test_if_we_have_exact_amount_to_copy() {
+        let mut buffer = PageBlobBuffer::new(8);
 
-        buffer.append(&[
-            9u8, 0u8, 0u8, 0u8, // First Message Len
-            15u8, 16u8, 17u8, 18u8, // First page
-            19u8, 20u8, 21u8, 22u8, 23u8, 3u8, 0u8, 0u8, // Second Message Len unfinished
-        ]);
+        let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
+        buffer.upload(&src);
 
-        assert_eq!(16, buffer.buffer.len());
+        let mut dest = [255u8, 255u8, 255u8, 255u8, 255u8, 255u8, 255u8, 255u8];
 
-        let msg_size = buffer.get_next_message_size().unwrap();
+        let copied = buffer.copy_to(&mut dest);
 
-        assert_eq!(9, msg_size);
+        assert_eq!(copied, 8);
+        assert_eq!(dest, [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8]);
 
-        let msg = buffer.get_payload(msg_size).unwrap();
-
-        assert_eq!(9, msg.len());
-
-        let msg_size = buffer.get_next_message_size();
-
-        assert_eq!(true, msg_size.is_none());
-        assert_eq!(3, buffer.available_to_read_size());
-
-        buffer.append(&[0u8, 17u8, 18u8, 19u8, 0u8, 0u8, 0u8, 0u8]);
-
-        assert_eq!(11, buffer.available_to_read_size());
-
-        let msg_size = buffer.get_next_message_size();
-
-        assert_eq!(3, msg_size.unwrap());
+        assert_eq!(buffer.position, 0);
     }
 
     #[test]
-    fn test_get_last_page() {
-        let mut buffer = PageBlobBuffer::new(4, 16);
+    fn test_several_copy() {
+        let mut buffer = PageBlobBuffer::new(8);
 
-        buffer.append(&[1u8, 1u8, 1u8, 1u8, 2u8, 2u8]);
+        let src = [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
+        buffer.upload(&src);
 
-        buffer.position = 6;
+        let mut dest = [255u8, 255u8];
 
-        let last_page = buffer.get_last_page();
+        let copied = buffer.copy_to(&mut dest);
 
-        println!("{:?}", last_page);
+        assert_eq!(copied, 2);
+        assert_eq!(dest, [0u8, 1u8]);
 
-        assert_bytes(last_page, &[2u8, 2u8])
-    }
+        assert_eq!(buffer.position, 2);
 
-    fn assert_bytes(left: &[u8], right: &[u8]) {
-        assert_eq!(left.len(), right.len());
+        let copied = buffer.copy_to(&mut dest);
 
-        for i in 0..left.len() {
-            let left_b = left[i];
-            let right_b = right[i];
-            assert_eq!(left_b, right_b);
-        }
+        assert_eq!(copied, 2);
+        assert_eq!(dest, [2u8, 3u8]);
+
+        assert_eq!(buffer.position, 4);
+
+        let copied = buffer.copy_to(&mut dest);
+
+        assert_eq!(copied, 2);
+        assert_eq!(dest, [4u8, 5u8]);
+
+        assert_eq!(buffer.position, 6);
+
+        let copied = buffer.copy_to(&mut dest);
+
+        assert_eq!(copied, 2);
+        assert_eq!(dest, [6u8, 7u8]);
+
+        assert_eq!(buffer.position, 0);
     }
 }

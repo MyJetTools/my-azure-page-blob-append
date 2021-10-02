@@ -3,7 +3,7 @@ use my_azure_storage_sdk::{
     AzureStorageError,
 };
 
-use super::pages_cache::{PageCacheItem, PagesCache};
+use crate::pages_cache::{PageCacheItem, PagesCache};
 
 pub struct PageBlobRandomAccess {
     pages_cache: PagesCache,
@@ -71,12 +71,12 @@ impl PageBlobRandomAccess {
         }
 
         let page_no =
-            super::page_blob_utils::get_page_no_from_page_blob_position(start_pos, BLOB_PAGE_SIZE);
+            crate::page_blob_utils::get_page_no_from_page_blob_position(start_pos, BLOB_PAGE_SIZE);
 
         let page = self.read_page(page_no).await?;
 
         let pos_in_page =
-            super::page_blob_utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
+            crate::page_blob_utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
 
         copy_to.copy_from_slice(&page.data[pos_in_page..pos_in_page + &copy_to.len()]);
 
@@ -114,13 +114,13 @@ impl PageBlobRandomAccess {
         payload: &[u8],
     ) -> Result<(), AzureStorageError> {
         let page_no =
-            super::page_blob_utils::get_page_no_from_page_blob_position(start_pos, BLOB_PAGE_SIZE);
+            crate::page_blob_utils::get_page_no_from_page_blob_position(start_pos, BLOB_PAGE_SIZE);
 
         {
             self.make_sure_page_is_in_cache(page_no).await?;
 
             let pos_in_page =
-                super::page_blob_utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
+                crate::page_blob_utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
 
             let buf = self.pages_cache.get_page_mut(page_no).unwrap();
 
