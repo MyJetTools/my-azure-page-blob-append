@@ -93,6 +93,6 @@ mod tests {
 
         let my_page_blob = MyPageBlobMock::new();
 
-        my_page_blob.a
+        //my_page_blob.a
     }
 }

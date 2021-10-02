@@ -16,22 +16,23 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         Self {
             page_blob: src.page_blob,
             write_position: src.position,
-            cache: Cache::new(),
+            cache: Cache::new(BLOB_PAGE_SIZE, vec![], 0),
         }
     }
 
     fn get_position_to_write(&self) -> usize {
-        todo!("We calculate the position of last 0 0 0 0 whic we are going to overwrite - 4");
+        //self.cache.
+        0
     }
 
-    pub fn append(&mut self, package: PackageBuilder) {
-        let buffer = package.get_result();
+    pub fn append(&mut self, package: &mut PackageBuilder) {
+        package.finalize();
+        let buffer = &package.buffer;
 
         let position_to_write = self.get_position_to_write();
 
         self.cache.blob_is_increased(&buffer);
 
-        todo!("")
     }
 }
 

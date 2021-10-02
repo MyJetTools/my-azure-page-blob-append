@@ -2,7 +2,7 @@ use my_azure_page_blob::*;
 
 use crate::{
     settings::Settings, state_data_initializing::GetNextPayloadResult, ChangeState,
-    PageBlobAppendCacheError, PageBlobAppendCacheState, StateDataInitialized,
+    PageBlobAppendCacheError, PageBlobAppendCacheState,
     StateDataInitializing, StateDataNotInitialized,
 };
 
@@ -60,6 +60,7 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
                             self.change_state(new_state);
                             return Ok(None);
                         }
+                        GetNextPayloadResult::TheEnd => todo!("THE END ARM!"),
                     }
                 }
                 PageBlobAppendCacheState::Corrupted(_) => {
@@ -84,9 +85,10 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
             }
             ChangeState::ToInitialized => {
                 if let PageBlobAppendCacheState::Initializing(state) = old_state.unwrap() {
-                    let state_data: StateDataInitialized<TMyPageBlob> =
+                    todo!("Fix commented");
+                    /* let state_data: StateDataInitialized<TMyPageBlob> =
                         StateDataInitialized::from_initializing(state);
-                    self.state = Some(PageBlobAppendCacheState::Initialized(state_data));
+                    self.state = Some(PageBlobAppendCacheState::Initialized(state_data)); */
                 }
             }
             ChangeState::ToCorrupted => {
@@ -101,7 +103,10 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
     fn get_page_blob_mut(&mut self) -> &mut TMyPageBlob {
         match self.state.as_mut().unwrap() {
             PageBlobAppendCacheState::NotInitialized(state) => return &mut state.page_blob,
-            PageBlobAppendCacheState::Initializing(state) => return &mut state.page_blob,
+            PageBlobAppendCacheState::Initializing(state) => {
+                todo!("FIX IT");
+                //return &mut state.page_blob,
+            }
             PageBlobAppendCacheState::Corrupted(blob) => return blob,
             PageBlobAppendCacheState::Initialized(state) => &mut state.page_blob,
         }
