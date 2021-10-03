@@ -1,8 +1,8 @@
 pub struct Cache {
-    data: Vec<u8>,
-    position_in_blob: usize,
-    position_in_last_pages: usize,
-    page_size: usize,
+    pub data: Vec<u8>,
+    pub position_in_blob: usize,
+    pub position_in_last_pages: usize,
+    pub page_size: usize,
 }
 
 impl Cache {
@@ -24,11 +24,20 @@ impl Cache {
     }
 
     pub fn blob_is_increased(&mut self, buffer: &[u8]) {
-        let new_position = self.position_in_blob + buffer.len();
+        let new_position_in_blob = self.position_in_blob + buffer.len();
 
-        let new_position_in_cache = self.get_position_in_last_pages(new_position);
+        let new_position_in_cache = self.get_position_in_last_pages(new_position_in_blob);
+        let buffer_length = buffer.len();
+        let page_amount = buffer_length / self.page_size;
 
-        self.data = buffer[buffer.len() - self.page_size..].to_vec();
+        if page_amount >= 2 {
+            self.data = buffer[buffer.len() - self.page_size*2..].to_vec();
+        } else {
+            self.data = buffer[buffer.len() - self.page_size..].to_vec();
+        }
+
+        self.position_in_blob = new_position_in_blob;
+        self.position_in_last_pages = new_position_in_cache;
     }
 
     /* fn get_pages_offset(&self) -> usize{
