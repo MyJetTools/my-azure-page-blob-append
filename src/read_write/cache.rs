@@ -1,3 +1,5 @@
+use std::usize;
+
 pub struct Cache {
     pub data: Vec<u8>,
     pub position_in_blob: usize,
@@ -23,8 +25,8 @@ impl Cache {
         return self.get_position_in_last_pages(self.position_in_blob);
     }
 
-    pub fn blob_is_increased(&mut self, buffer: &[u8]) {
-        let new_position_in_blob = self.position_in_blob + buffer.len();
+    pub fn blob_is_increased(&mut self, buffer: &[u8], position_increase: usize) {
+        let new_position_in_blob = self.position_in_blob + position_increase;
 
         let new_position_in_cache = self.get_position_in_last_pages(new_position_in_blob);
         let buffer_length = buffer.len();

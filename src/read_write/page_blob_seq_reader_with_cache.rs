@@ -46,7 +46,8 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReaderWithCache<TPageBlob> {
     pub async fn read(&mut self, out_buffer: &mut [u8]) -> Result<bool, AzureStorageError> {
         let blob_size = self.get_blob_size().await?;
 
-        if self.position + out_buffer.len() >= blob_size {
+        //
+        if self.position + out_buffer.len() > blob_size {
             return Ok(false);
         }
 

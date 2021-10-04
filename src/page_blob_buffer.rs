@@ -3,6 +3,7 @@ pub struct PageBlobBuffer {
     pub last_pages: Vec<u8>,
     position: usize,
     pub page_size: usize,
+    last_page_capacity: usize,
 }
 
 impl PageBlobBuffer {
@@ -13,7 +14,8 @@ impl PageBlobBuffer {
             buffer: Vec::with_capacity(capacity_size),
             last_pages: Vec::with_capacity(page_size * 2),
             position: 0,
-            page_size: page_size
+            page_size: page_size,
+            last_page_capacity: 2 * page_size,
         };
         result
     }
@@ -30,15 +32,19 @@ impl PageBlobBuffer {
     fn advance_position(&mut self, size: usize) {
         self.position += size;
         if self.position == self.buffer.len() {
-            self.last_pages.clear();
-            
-            let last_page_capacity = self.page_size * 2;
-
-            if self.buffer.len() >= last_page_capacity {
-                let slice = &self.buffer[self.buffer.len()-last_page_capacity..self.buffer.len()];
-                self.last_pages.copy_from_slice(slice);
+            if self.buffer.len() >= self.last_page_capacity {
+                self.last_pages.clear();
+                let from = self.buffer.len() - self.last_page_capacity;
+                let slice = &self.buffer[from..];
+                self.last_pages.extend_from_slice(slice);
             } else {
-                self.last_pages.copy_from_slice(&self.buffer);
+                let sum_length = self.last_pages.len() + self.last_pages.len();
+
+                if sum_length >= self.last_page_capacity {
+                    let to = self.last_pages.len() - (self.last_page_capacity - self.buffer.len());
+                    self.last_pages.drain(0..to);
+                }
+                self.last_pages.extend_from_slice(&self.buffer);
             }
 
             self.buffer.clear();
