@@ -20,7 +20,7 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
             }
             PageBlobAppendCacheState::Corrupted(blob) => PageBlobAppendCacheState::Corrupted(blob),
             PageBlobAppendCacheState::Initialized(state) => {
-                PageBlobAppendCacheState::Corrupted(state.page_blob)
+                PageBlobAppendCacheState::Corrupted(state.page_blob_seq_writer.page_blob)
             }
         }
     }

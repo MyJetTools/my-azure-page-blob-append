@@ -76,7 +76,7 @@ impl PageBlobRandomAccess {
         let page = self.read_page(page_no).await?;
 
         let pos_in_page =
-            crate::page_blob_utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
+            crate::read_write::utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
 
         copy_to.copy_from_slice(&page.data[pos_in_page..pos_in_page + &copy_to.len()]);
 
@@ -120,7 +120,7 @@ impl PageBlobRandomAccess {
             self.make_sure_page_is_in_cache(page_no).await?;
 
             let pos_in_page =
-                crate::page_blob_utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
+                crate::read_write::utils::get_position_within_page(start_pos, BLOB_PAGE_SIZE);
 
             let buf = self.pages_cache.get_page_mut(page_no).unwrap();
 

@@ -3,8 +3,6 @@ use std::time::Duration;
 use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::AzureStorageError;
 
-use super::page_blob_buffer::PageBlobBuffer;
-
 pub async fn get_available_pages_amount<TMyPageBlob: MyPageBlob>(
     page_blob: &mut TMyPageBlob,
 ) -> Result<usize, AzureStorageError> {
@@ -109,16 +107,8 @@ pub fn get_pages_amount_by_size_including_buffer_capacity(
     data_pages_amount + buffer_pages - 1
 }
 
+//TODO - Moved to read_write::utils module
 pub fn get_page_no_from_page_blob_position(page_blob_position: usize, page_size: usize) -> usize {
-    return page_blob_position / page_size;
-}
-
-pub fn get_position_within_page(page_blob_position: usize, page_size: usize) -> usize {
-    let page_no = get_page_no_from_page_blob_position(page_blob_position, page_size);
-    return page_blob_position - page_no * page_size;
-}
-
-fn get_pages_to_cut(page_blob_position: usize, page_size: usize) -> usize {
     return page_blob_position / page_size;
 }
 
@@ -138,31 +128,6 @@ pub fn extend_buffer_to_full_pages_size(buffer: &mut Vec<u8>, page_size: usize) 
     for _ in 0..remains {
         buffer.push(0);
     }
-}
-
-pub fn extend_result_buffer_and_cahce(
-    result_buffer: &mut Vec<u8>,
-    data_from_blob: &[u8],
-    data_size: usize,
-    buffer: &mut PageBlobBuffer,
-    new_blob_position: usize,
-    page_size: usize,
-) {
-    todo!("Implement")
-    /*
-    result_buffer.extend(&data_from_blob[..data_size]);
-
-    let pages_to_cut = get_pages_to_cut(data_size, page_size);
-
-    let bytes_to_cut = pages_to_cut * page_size;
-
-    let bytes_after_cut = &data_from_blob[bytes_to_cut..];
-
-    let buffer_position = new_blob_position
-        - get_page_no_from_page_blob_position(new_blob_position, page_size) * page_size;
-
-    buffer.init_buffer_and_set_position(bytes_after_cut, buffer_position as usize);
-    */
 }
 
 pub fn get_last_page<'t>(data: &'t Vec<u8>, page_size: usize) -> &'t [u8] {
@@ -239,17 +204,5 @@ mod tests {
         extend_buffer_to_full_pages_size(&mut buffer, 512);
 
         assert_eq!(512, buffer.len());
-    }
-
-    //@todo - Debug
-    #[test]
-    fn test_position_within_page() {
-        let result = get_position_within_page(0, 512);
-        assert_eq!(0, result);
-        let result = get_position_within_page(5, 512);
-        assert_eq!(5, result);
-
-        let result = get_position_within_page(512, 512);
-        assert_eq!(0, result);
     }
 }

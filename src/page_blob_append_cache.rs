@@ -2,8 +2,8 @@ use my_azure_page_blob::*;
 
 use crate::{
     settings::Settings, state_data_initializing::GetNextPayloadResult, ChangeState,
-    PageBlobAppendCacheError, PageBlobAppendCacheState, StateDataInitialized,
-    StateDataInitializing, StateDataNotInitialized,
+    PageBlobAppendCacheError, PageBlobAppendCacheState, StateDataInitializing,
+    StateDataNotInitialized, StateDataWriting,
 };
 
 pub struct PageBlobAppendCache<TMyPageBlob: MyPageBlob> {
@@ -33,11 +33,7 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
                 Err(PageBlobAppendCacheError::NotInitialized)
             }
             PageBlobAppendCacheState::Corrupted(_) => Err(PageBlobAppendCacheError::Corrupted),
-            PageBlobAppendCacheState::Initialized(state) => {
-                state
-                    .append_and_write(payloads, self.settings.max_pages_to_write_single_round_trip)
-                    .await
-            }
+            PageBlobAppendCacheState::Initialized(state) => state.append_and_write(payloads).await,
         }
     }
 
@@ -84,34 +80,14 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
             }
             ChangeState::ToInitialized => {
                 if let PageBlobAppendCacheState::Initializing(state) = old_state.unwrap() {
-                    let state_data: StateDataInitialized<TMyPageBlob> =
-                        StateDataInitialized::from_initializing(state);
+                    let state_data: StateDataWriting<TMyPageBlob> =
+                        StateDataWriting::from_initializing(state, &self.settings);
                     self.state = Some(PageBlobAppendCacheState::Initialized(state_data));
                 }
             }
             ChangeState::ToCorrupted => {
                 self.state = Some(PageBlobAppendCacheState::to_corrupted(old_state.unwrap()));
             }
-            _ => {
-                std::mem::swap(&mut old_state, &mut self.state);
-            }
         }
-    }
-
-    fn get_page_blob_mut(&mut self) -> &mut TMyPageBlob {
-        match self.state.as_mut().unwrap() {
-            PageBlobAppendCacheState::NotInitialized(state) => return &mut state.page_blob,
-            PageBlobAppendCacheState::Initializing(state) => return &mut state.page_blob,
-            PageBlobAppendCacheState::Corrupted(blob) => return blob,
-            PageBlobAppendCacheState::Initialized(state) => &mut state.page_blob,
-        }
-    }
-
-    async fn create_new_blob(&mut self) -> Result<(), PageBlobAppendCacheError> {
-        let auto_ressize = self.settings.blob_auto_resize_in_pages;
-        let page_blob = self.get_page_blob_mut();
-        page_blob.create_if_not_exists(auto_ressize).await?;
-        page_blob.resize(auto_ressize);
-        Ok(())
     }
 }

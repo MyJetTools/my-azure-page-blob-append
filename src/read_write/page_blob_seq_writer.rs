@@ -1,48 +1,53 @@
 use my_azure_page_blob::MyPageBlob;
-use my_azure_storage_sdk::page_blob::consts::BLOB_PAGE_SIZE;
+use my_azure_storage_sdk::{page_blob::consts::BLOB_PAGE_SIZE, AzureStorageError};
 
-use crate::PageBlobSequenceReaderWithCache;
+use crate::settings::Settings;
 
-use super::{Cache, PackageBuilder};
+use super::{PackageBuilder, PageBlobSequenceReader, WriteCache};
 
 pub struct PageBlobSequenceWriter<TPageBlob: MyPageBlob> {
     pub page_blob: TPageBlob,
-    pub write_position: usize,
-    pub cache: Cache,
+    pub write_cache: WriteCache,
+    pub max_pages_to_write: usize,
+    blob_autoressize_in_pages: usize,
 }
 
 impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
-    pub fn new(src: PageBlobSequenceReaderWithCache<TPageBlob>) -> Self {
+    pub fn new(reader: PageBlobSequenceReader<TPageBlob>, settings: &Settings) -> Self {
+        let (write_position, last_page) = reader.read_cache.get_last_page();
         Self {
-            page_blob: src.page_blob,
-            write_position: src.position,
-            cache: Cache::new(),
+            page_blob: reader.page_blob,
+            max_pages_to_write: 4000,
+            blob_autoressize_in_pages: settings.blob_auto_resize_in_pages,
+            write_cache: WriteCache::new(BLOB_PAGE_SIZE, last_page, write_position),
         }
     }
 
-    fn get_position_to_write(&self) -> usize {
-        todo!("We calculate the position of last 0 0 0 0 whic we are going to overwrite - 4");
-    }
+    pub async fn append(&mut self, package: PackageBuilder) -> Result<(), AzureStorageError> {
+        let payload_to_write = package.get_result();
 
-    pub fn append(&mut self, package: PackageBuilder) {
-        let buffer = package.get_result();
+        self.write_cache.start_increasing_blob(&payload_to_write);
 
-        let position_to_write = self.get_position_to_write();
+        let payload_to_write = self
+            .write_cache
+            .concat_with_current_cache(&payload_to_write);
 
-        self.cache.blob_is_increased(&buffer);
+        let page_no = super::utils::get_page_no_from_page_blob_position(
+            self.write_cache.write_position,
+            BLOB_PAGE_SIZE,
+        );
 
-        todo!("")
-    }
-}
+        self.page_blob
+            .auto_ressize_and_save_pages(
+                page_no,
+                self.max_pages_to_write,
+                payload_to_write,
+                self.blob_autoressize_in_pages,
+            )
+            .await?;
 
-#[cfg(test)]
-mod tests {
-    use my_azure_page_blob::MyPageBlobMock;
+        self.write_cache.written();
 
-    #[test]
-    fn test_positive_read_sequence() {
-        let first_package = [1u8; 513];
-
-        let my_page_blob = MyPageBlobMock::new();
+        Ok(())
     }
 }

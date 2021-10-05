@@ -15,7 +15,7 @@ impl PackageBuilder {
         self.buffer.extend_from_slice(payload);
     }
 
-    pub fn get_result(self) -> Vec<u8> {
+    pub fn get_result(mut self) -> Vec<u8> {
         let end_seq = [0u8; 4];
         self.buffer.extend_from_slice(&end_seq);
         self.buffer

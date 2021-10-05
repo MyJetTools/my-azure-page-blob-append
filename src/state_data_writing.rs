@@ -1,74 +1,37 @@
 use my_azure_page_blob::MyPageBlob;
-use my_azure_storage_sdk::page_blob::consts::BLOB_PAGE_SIZE;
 
 use crate::{
-    page_blob_buffer::PageBlobBuffer, page_blob_utils, settings::Settings,
+    read_write::{PackageBuilder, PageBlobSequenceWriter},
+    settings::Settings,
     PageBlobAppendCacheError, StateDataInitializing,
 };
 
 pub struct StateDataWriting<TMyPageBlob: MyPageBlob> {
-    pages_have_read: usize,
     pub blob_position: usize,
-    buffer: PageBlobBuffer,
-    settings: Settings,
-    pub page_blob: TMyPageBlob,
+    pub page_blob_seq_writer: PageBlobSequenceWriter<TMyPageBlob>,
 }
 
 impl<TMyPageBlob: MyPageBlob> StateDataWriting<TMyPageBlob> {
-    pub fn from_initializing(src: StateDataInitializing<TMyPageBlob>) -> Self {
+    pub fn from_initializing(src: StateDataInitializing<TMyPageBlob>, settings: &Settings) -> Self {
         Self {
             blob_position: src.blob_position,
-            buffer: src.buffer,
-            page_blob: src.seq_reader.page_blob,
-            settings: src.settings,
-            pages_have_read: src.pages_have_read,
+            page_blob_seq_writer: PageBlobSequenceWriter::new(src.seq_reader, settings),
         }
     }
 
     pub async fn append_and_write<'s>(
         &mut self,
         payloads: &Vec<Vec<u8>>,
-        max_pages_to_write_single_round_trip: usize,
     ) -> Result<(), PageBlobAppendCacheError> {
-        todo!("Implement");
-        /*
-        let payload = page_blob_utils::compile_payloads(&payloads);
-        let payload_len = payload.len();
+        let mut builder = PackageBuilder::new();
 
-        let mut payload_to_upload = self.buffer.get_last_page().to_vec();
+        for payload in payloads {
+            builder.add_payload(payload);
+        }
 
-        payload_to_upload.extend(&payload);
-
-        let last_page = page_blob_utils::get_last_page(&payload_to_upload, BLOB_PAGE_SIZE).to_vec();
-
-        payload_to_upload.extend(&[0u8, 0u8, 0u8, 0u8]);
-
-        page_blob_utils::extend_buffer_to_full_pages_size(&mut payload_to_upload, BLOB_PAGE_SIZE);
-
-        //---------------------
-        let page_no = page_blob_utils::get_page_no_from_page_blob_position(
-            self.blob_position,
-            BLOB_PAGE_SIZE,
-        );
-
-        self.page_blob
-            .auto_ressize_and_save_pages(
-                page_no,
-                max_pages_to_write_single_round_trip,
-                payload_to_upload,
-                self.settings.blob_auto_resize_in_pages,
-            )
-            .await?;
-
-        self.blob_position += payload_len;
-
-        //----------------------------------------
-
-        self.buffer.set_last_page(last_page.as_slice());
-
+        self.page_blob_seq_writer.append(builder).await?;
 
         Ok(())
-           */
     }
 }
 

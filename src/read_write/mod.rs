@@ -1,11 +1,12 @@
-mod cache;
 mod package_builder;
-mod page_blob_random_access;
-mod page_blob_seq_reader_with_cache;
+mod page_blob_seq_reader;
 mod page_blob_seq_writer;
+mod read_cache;
+pub mod utils;
+mod write_cache;
 
 pub use package_builder::PackageBuilder;
-pub use page_blob_random_access::PageBlobRandomAccess;
-pub use page_blob_seq_reader_with_cache::PageBlobSequenceReaderWithCache;
+
+pub use page_blob_seq_reader::PageBlobSequenceReader;
 pub use page_blob_seq_writer::PageBlobSequenceWriter;
-pub use cache::Cache;
+pub use write_cache::WriteCache;
