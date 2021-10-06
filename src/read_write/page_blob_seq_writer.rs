@@ -13,7 +13,7 @@ pub struct PageBlobSequenceWriter<TPageBlob: MyPageBlob> {
 }
 
 impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
-    pub fn new(reader: PageBlobSequenceReader<TPageBlob>, settings: &Settings) -> Self {
+    pub fn new(mut reader: PageBlobSequenceReader<TPageBlob>, settings: &Settings) -> Self {
         let (write_position, last_page) = reader.read_cache.get_last_page();
         Self {
             page_blob: reader.page_blob,

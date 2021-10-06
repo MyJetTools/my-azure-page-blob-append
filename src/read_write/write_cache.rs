@@ -34,9 +34,10 @@ impl WriteCache {
         result
     }
 
-    //We adding last 2 or one pages closing with [0,0,0,0]
+    //We are adding full payload ended with [0,0,0,0]
     pub fn start_increasing_blob(&mut self, buffer: &[u8]) {
-        self.next_write_position = self.write_position + buffer.len() - 4;
+        self.next_write_position =
+            self.write_position + buffer.len() - super::utils::END_MARKER.len();
 
         if let Some(last_page) = &self.last_page {
             self.next_write_position -= last_page.len();
@@ -79,7 +80,7 @@ mod tests {
 
         let mut package = vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8];
 
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         write_cache.start_increasing_blob(&package);
 
@@ -93,7 +94,7 @@ mod tests {
 
         let mut package = vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8];
 
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         write_cache.start_increasing_blob(&package);
 
@@ -110,7 +111,7 @@ mod tests {
 
         let mut package = vec![1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8, 9u8];
 
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         write_cache.start_increasing_blob(&package);
 
@@ -126,7 +127,7 @@ mod tests {
         let mut write_cache = WriteCache::new(8, None, 0);
 
         let mut package = vec![1u8, 2u8, 3u8];
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         write_cache.start_increasing_blob(&package);
 
@@ -139,7 +140,7 @@ mod tests {
         // Adding new Package
 
         let mut package = vec![4u8, 5u8, 6u8];
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         let package_to_write = write_cache.concat_with_current_cache(&package);
 
@@ -159,7 +160,7 @@ mod tests {
         // Adding new Package
 
         let mut package = vec![7u8, 8u8, 9u8];
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         let package_to_write = write_cache.concat_with_current_cache(&package);
 
@@ -181,7 +182,7 @@ mod tests {
         // Adding new Package
 
         let mut package = vec![10u8, 11u8, 12u8];
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         let package_to_write = write_cache.concat_with_current_cache(&package);
 
@@ -203,7 +204,7 @@ mod tests {
         // Adding new Package
 
         let mut package = vec![13u8, 14u8, 15u8];
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         let package_to_write = write_cache.concat_with_current_cache(&package);
 
@@ -228,7 +229,7 @@ mod tests {
         // Adding new Package
 
         let mut package = vec![16u8, 17u8, 18u8];
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         let package_to_write = write_cache.concat_with_current_cache(&package);
 
@@ -250,7 +251,7 @@ mod tests {
         // Adding new Package
 
         let mut package = vec![19u8, 20u8, 21u8, 22u8, 23u8, 24u8];
-        package.extend([0u8, 0u8, 0u8, 0u8]);
+        package.extend(super::super::utils::END_MARKER);
 
         let package_to_write = write_cache.concat_with_current_cache(&package);
 

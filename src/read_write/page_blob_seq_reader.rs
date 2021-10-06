@@ -21,7 +21,7 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReader<TPageBlob> {
             capacity_in_pages,
             current_page: 0,
             read_position: 0,
-            read_cache: ReadCache::new(BLOB_PAGE_SIZE, capacity_in_pages),
+            read_cache: ReadCache::new(BLOB_PAGE_SIZE),
             blob_size: None,
             blob_size_in_pages: 0,
         }
@@ -66,7 +66,7 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReader<TPageBlob> {
                     .get(self.current_page, pages_to_download)
                     .await?;
 
-                self.read_cache.upload(buf.as_slice());
+                self.read_cache.upload(buf);
                 self.current_page += pages_to_download;
             }
 
