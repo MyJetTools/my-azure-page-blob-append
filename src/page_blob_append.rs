@@ -21,12 +21,12 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
         }
     }
 
-    pub fn get_page_blob(&mut self) -> &TMyPageBlob {
+    pub fn get_page_blob(&mut self) -> &mut TMyPageBlob {
         match self.state.as_mut().unwrap() {
-            PageBlobAppendCacheState::NotInitialized(state) => &state.page_blob,
-            PageBlobAppendCacheState::Reading(state) => &state.seq_reader.page_blob,
+            PageBlobAppendCacheState::NotInitialized(state) => &mut state.page_blob,
+            PageBlobAppendCacheState::Reading(state) => &mut state.seq_reader.page_blob,
             PageBlobAppendCacheState::Corrupted(state) => state,
-            PageBlobAppendCacheState::Writing(state) => &state.seq_writer.page_blob,
+            PageBlobAppendCacheState::Writing(state) => &mut state.seq_writer.page_blob,
         }
     }
 
