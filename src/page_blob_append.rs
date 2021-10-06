@@ -6,18 +6,27 @@ use crate::{
     ChangeState, PageBlobAppendCacheError, PageBlobAppendCacheState,
 };
 
-pub struct PageBlobAppendCache<TMyPageBlob: MyPageBlob> {
+pub struct PageBlobAppend<TMyPageBlob: MyPageBlob> {
     state: Option<PageBlobAppendCacheState<TMyPageBlob>>,
     settings: AppendPageBlobSettings,
 }
 
-impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
+impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
     pub fn new(page_blob: TMyPageBlob, settings: AppendPageBlobSettings) -> Self {
         Self {
             state: Some(PageBlobAppendCacheState::NotInitialized(
                 StateDataNotInitialized::new(page_blob),
             )),
             settings,
+        }
+    }
+
+    pub fn get_page_blob(&self) -> &TMyPageBlob {
+        match self.state.as_ref().unwrap() {
+            PageBlobAppendCacheState::NotInitialized(state) => &state.page_blob,
+            PageBlobAppendCacheState::Reading(state) => &state.seq_reader.page_blob,
+            PageBlobAppendCacheState::Corrupted(state) => state,
+            PageBlobAppendCacheState::Writing(state) => &state.seq_writer.page_blob,
         }
     }
 

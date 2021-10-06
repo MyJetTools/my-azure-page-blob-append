@@ -1,6 +1,6 @@
 mod error;
 mod my_date_time;
-mod page_blob_append_cache;
+mod page_blob_append;
 mod page_blob_random_access;
 pub mod page_blob_utils;
 mod pages_cache;
@@ -8,7 +8,7 @@ mod read_write;
 mod settings;
 mod states;
 
-pub use page_blob_append_cache::PageBlobAppendCache;
+pub use page_blob_append::PageBlobAppend;
 
 pub use error::PageBlobAppendCacheError;
 
