@@ -1,33 +1,46 @@
 use my_azure_page_blob::MyPageBlob;
 
-use super::{StateDataNotInitialized, StateDataReading, StateDataWriting};
+use crate::AppendPageBlobSettings;
+
+use super::{StateDataCorrupted, StateDataNotInitialized, StateDataReading, StateDataWriting};
 
 pub enum PageBlobAppendCacheState<TMyPageBlob: MyPageBlob> {
     NotInitialized(StateDataNotInitialized<TMyPageBlob>),
     Reading(StateDataReading<TMyPageBlob>),
-    Corrupted(TMyPageBlob),
+    Corrupted(StateDataCorrupted<TMyPageBlob>),
     Writing(StateDataWriting<TMyPageBlob>),
 }
 
 impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
-    pub fn to_corrupted(self) -> Self {
+    pub fn to_corrupted(self, settings: AppendPageBlobSettings) -> Self {
         match self {
-            PageBlobAppendCacheState::NotInitialized(state) => {
-                PageBlobAppendCacheState::Corrupted(state.page_blob)
+            PageBlobAppendCacheState::NotInitialized(state) => PageBlobAppendCacheState::Corrupted(
+                StateDataCorrupted::from_not_initialized_state(state, settings),
+            ),
+            PageBlobAppendCacheState::Reading(state) => PageBlobAppendCacheState::Corrupted(
+                StateDataCorrupted::from_reading_state(state, settings),
+            ),
+            _ => {
+                panic!(
+                    "PageBlobAppend can not be converted to corrupted state from the state {}",
+                    self.as_string_name()
+                )
             }
-            PageBlobAppendCacheState::Reading(state) => {
-                PageBlobAppendCacheState::Corrupted(state.seq_reader.page_blob)
-            }
-            PageBlobAppendCacheState::Corrupted(blob) => PageBlobAppendCacheState::Corrupted(blob),
-            PageBlobAppendCacheState::Writing(state) => {
-                PageBlobAppendCacheState::Corrupted(state.seq_writer.page_blob)
-            }
+        }
+    }
+
+    pub fn as_string_name(&self) -> &str {
+        match self {
+            PageBlobAppendCacheState::NotInitialized(_) => "NotInitialized",
+            PageBlobAppendCacheState::Reading(_) => "Reading",
+            PageBlobAppendCacheState::Corrupted(_) => "Corrupted",
+            PageBlobAppendCacheState::Writing(_) => "Writing",
         }
     }
 }
 
 pub enum ChangeState {
-    ToInitialization,
-    ToInitialized,
+    ToReadMode,
+    ToWriteMode,
     ToCorrupted,
 }

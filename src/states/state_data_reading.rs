@@ -89,9 +89,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         }
 
         if payload_size == 0 {
-            return Ok(GetNextPayloadResult::ChangeState(
-                ChangeState::ToInitialized,
-            ));
+            return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToWriteMode));
         }
 
         let payload = self.get_payload(payload_size).await?;

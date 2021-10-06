@@ -32,7 +32,7 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReader<TPageBlob> {
             return match self.blob_size {
                 None => {
                     self.blob_size_in_pages =
-                        crate::page_blob_utils::get_available_pages_amount(&mut self.page_blob)
+                        crate::with_retries::get_available_pages_amount(&mut self.page_blob)
                             .await?;
 
                     let blob_size = self.blob_size_in_pages * BLOB_PAGE_SIZE;

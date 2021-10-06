@@ -3,44 +3,6 @@ use std::time::Duration;
 use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::AzureStorageError;
 
-pub async fn get_available_pages_amount<TMyPageBlob: MyPageBlob>(
-    page_blob: &mut TMyPageBlob,
-) -> Result<usize, AzureStorageError> {
-    let mut attempt_no = 1;
-
-    loop {
-        let result = page_blob.get_available_pages_amount().await;
-
-        if result.is_ok() {
-            return result;
-        }
-
-        let err = result.err().unwrap();
-
-        match &err {
-            AzureStorageError::ContainerNotFound => {
-                crate::page_blob_utils::create_container_with_retires(page_blob).await?;
-            }
-            AzureStorageError::HyperError { err: _ } => {
-                println!(
-                    "Can not execute get_available_pages_amount because of  {:?}. Attempt {} Retrying",
-                    err, attempt_no
-                );
-                attempt_no += 1;
-
-                if attempt_no > 5 {
-                    return Err(err);
-                }
-
-                tokio::time::sleep(Duration::from_secs(3)).await;
-            }
-            _ => {
-                return Err(err);
-            }
-        }
-    }
-}
-
 pub async fn create_container_with_retires<TMyPageBlob: MyPageBlob>(
     page_blob: &mut TMyPageBlob,
 ) -> Result<(), AzureStorageError> {

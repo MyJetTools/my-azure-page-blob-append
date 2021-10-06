@@ -8,5 +8,6 @@ edition = "2018"
 [dependencies]
 my-azure-storage-sdk = { git = "https://github.com/MyJetTools/my-azure-storage.git" }
 my-azure-page-blob = { git = "https://github.com/MyJetTools/my-azure-page-blob.git" }
+rust-extensions = { git = "https://github.com/MyJetTools/rust-extensions.git" }
 tokio = { version = "*", features = ["full"] }
 tokio-util = "*"

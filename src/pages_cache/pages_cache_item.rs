@@ -1,4 +1,4 @@
-use crate::my_date_time::DateTimeAsMicroseconds;
+use rust_extensions::date_time::DateTimeAsMicroseconds;
 
 pub struct PageCacheItem {
     pub data: Vec<u8>,
