@@ -2,7 +2,8 @@ use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::AzureStorageError;
 
 use crate::{
-    read_write::PageBlobSequenceReader, settings::Settings, ChangeState, StateDataNotInitialized,
+    read_write::PageBlobSequenceReader, settings::AppendPageBlobSettings, ChangeState,
+    StateDataNotInitialized,
 };
 
 pub enum GetNextPayloadResult {
@@ -14,14 +15,14 @@ pub struct StateDataInitializing<TMyPageBlob: MyPageBlob> {
     pub seq_reader: PageBlobSequenceReader<TMyPageBlob>,
     pub pages_have_read: usize,
     pub blob_position: usize,
-    pub settings: Settings,
+    pub settings: AppendPageBlobSettings,
     pub blob_size_in_pages: usize,
 }
 
 impl<TMyPageBlob: MyPageBlob> StateDataInitializing<TMyPageBlob> {
     pub fn from_not_initialized(
         not_initialized: StateDataNotInitialized<TMyPageBlob>,
-        settings: Settings,
+        settings: AppendPageBlobSettings,
     ) -> Self {
         Self {
             seq_reader: PageBlobSequenceReader::new(

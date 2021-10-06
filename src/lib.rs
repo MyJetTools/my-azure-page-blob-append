@@ -21,3 +21,4 @@ pub use state_data_not_initialized::StateDataNotInitialized;
 pub use state_data_writing::StateDataWriting;
 
 pub use page_blob_random_access::PageBlobRandomAccess;
+pub use settings::AppendPageBlobSettings;

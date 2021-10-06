@@ -1,7 +1,7 @@
 use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::{page_blob::consts::BLOB_PAGE_SIZE, AzureStorageError};
 
-use crate::settings::Settings;
+use crate::settings::AppendPageBlobSettings;
 
 use super::{PackageBuilder, PageBlobSequenceReader, WriteCache};
 
@@ -13,7 +13,10 @@ pub struct PageBlobSequenceWriter<TPageBlob: MyPageBlob> {
 }
 
 impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
-    pub fn new(mut reader: PageBlobSequenceReader<TPageBlob>, settings: &Settings) -> Self {
+    pub fn new(
+        mut reader: PageBlobSequenceReader<TPageBlob>,
+        settings: &AppendPageBlobSettings,
+    ) -> Self {
         let (write_position, last_page) = reader.read_cache.get_last_page();
         Self {
             page_blob: reader.page_blob,
@@ -68,7 +71,7 @@ mod tests {
 
         let reader = PageBlobSequenceReader::new(page_blob, 10);
 
-        let settings = Settings {
+        let settings = AppendPageBlobSettings {
             blob_auto_resize_in_pages: 2,
             cache_capacity_in_pages: 1,
             max_pages_to_write_single_round_trip: 4000,

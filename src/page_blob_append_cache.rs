@@ -1,18 +1,18 @@
 use my_azure_page_blob::*;
 
 use crate::{
-    settings::Settings, state_data_initializing::GetNextPayloadResult, ChangeState,
+    settings::AppendPageBlobSettings, state_data_initializing::GetNextPayloadResult, ChangeState,
     PageBlobAppendCacheError, PageBlobAppendCacheState, StateDataInitializing,
     StateDataNotInitialized, StateDataWriting,
 };
 
 pub struct PageBlobAppendCache<TMyPageBlob: MyPageBlob> {
     state: Option<PageBlobAppendCacheState<TMyPageBlob>>,
-    settings: Settings,
+    settings: AppendPageBlobSettings,
 }
 
 impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
-    pub fn new(page_blob: TMyPageBlob, settings: Settings) -> Self {
+    pub fn new(page_blob: TMyPageBlob, settings: AppendPageBlobSettings) -> Self {
         Self {
             state: Some(PageBlobAppendCacheState::NotInitialized(
                 StateDataNotInitialized::new(page_blob),
