@@ -51,3 +51,41 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use my_azure_page_blob::MyPageBlobMock;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_write_cases() {
+        let mut page_blob = MyPageBlobMock::new();
+
+        page_blob.create_container_if_not_exist().await.unwrap();
+
+        page_blob.create_if_not_exists(0).await.unwrap();
+
+        let reader = PageBlobSequenceReader::new(page_blob, 10);
+
+        let settings = Settings {
+            blob_auto_resize_in_pages: 2,
+            cache_capacity_in_pages: 1,
+            max_pages_to_write_single_round_trip: 4000,
+            max_payload_size_protection: 1,
+        };
+
+        let mut seq_writer = PageBlobSequenceWriter::new(reader, &settings);
+
+        let mut package_builder = PackageBuilder::new();
+
+        package_builder.add_payload(&[1u8, 1u8, 1u8]);
+        package_builder.add_payload(&[2u8, 2u8, 2u8, 2u8]);
+
+        seq_writer.append(package_builder).await.unwrap();
+
+        let data = seq_writer.page_blob.download().await.unwrap();
+
+        assert_eq!(&[3, 0, 0, 0, 1, 1, 1, 4, 0, 0, 0, 2, 2, 2, 2], &data[..15]);
+    }
+}
