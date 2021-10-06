@@ -4,6 +4,7 @@ pub struct PageBlobBuffer {
     position: usize,
     pub page_size: usize,
     last_page_capacity: usize,
+    pub last_message_size_position: usize
 }
 
 impl PageBlobBuffer {
@@ -16,6 +17,7 @@ impl PageBlobBuffer {
             position: 0,
             page_size: page_size,
             last_page_capacity: 2 * page_size,
+            last_message_size_position: 0
         };
         result
     }
@@ -28,25 +30,29 @@ impl PageBlobBuffer {
         self.buffer.extend(buffer);
     }
 
+    pub fn fill_last_pages(&mut self) {
+        if self.buffer.len() >= self.last_page_capacity {
+            self.last_pages.clear();
+            let from = self.buffer.len() - self.last_page_capacity;
+            let slice = &self.buffer[from..];
+            self.last_pages.extend_from_slice(slice);
+        } else {
+            let sum_length = self.last_pages.len() + self.last_pages.len();
+
+            if sum_length >= self.last_page_capacity {
+                let to = self.last_pages.len() - (self.last_page_capacity - self.buffer.len());
+                self.last_pages.drain(0..to);
+            }
+            self.last_pages.extend_from_slice(&self.buffer);
+        }
+    }
+
     #[inline]
     fn advance_position(&mut self, size: usize) {
         self.position += size;
+
         if self.position == self.buffer.len() {
-            if self.buffer.len() >= self.last_page_capacity {
-                self.last_pages.clear();
-                let from = self.buffer.len() - self.last_page_capacity;
-                let slice = &self.buffer[from..];
-                self.last_pages.extend_from_slice(slice);
-            } else {
-                let sum_length = self.last_pages.len() + self.last_pages.len();
-
-                if sum_length >= self.last_page_capacity {
-                    let to = self.last_pages.len() - (self.last_page_capacity - self.buffer.len());
-                    self.last_pages.drain(0..to);
-                }
-                self.last_pages.extend_from_slice(&self.buffer);
-            }
-
+            self.fill_last_pages();
             self.buffer.clear();
             self.position = 0;
         }

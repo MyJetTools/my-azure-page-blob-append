@@ -10,6 +10,8 @@ pub struct PageBlobSequenceWriter<TPageBlob: MyPageBlob> {
     pub write_position: usize,
     pub cache: Cache,
     pub current_page: usize,
+    pub last_message_size_position: usize,
+    pub last_message_size_position_in_blob: usize,
 }
 
 impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
@@ -17,14 +19,27 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         let mut buffer: Vec<u8> = Vec::with_capacity(src.cache.page_size * 2);
         buffer.extend_from_slice(&src.cache.last_pages);
 
-        let position_in_blob =
-            src.current_page * src.cache.page_size + buffer.len() % src.cache.page_size;
+        let last_message_size_page = PageBlobSequenceWriter::<TPageBlob>::divRoundClosest(
+            src.cache.last_message_size_position,
+            src.cache.page_size,
+        );
+        let last_message_size_position = src.cache.page_size
+            * last_message_size_page
+            + src.cache.last_message_size_position % src.cache.page_size;
+
+        let mut message_size_array = [0u8; 4];
+        let slice = &buffer[last_message_size_position..last_message_size_position + 4];
+        message_size_array.copy_from_slice(slice);
+        let message_size = i32::from_le_bytes(message_size_array) as usize;
+        let position_in_blob = src.cache.last_message_size_position + message_size + 4;
 
         Self {
             page_blob: src.page_blob,
             write_position: src.position,
             cache: Cache::new(src.cache.page_size, buffer, position_in_blob),
             current_page: src.current_page,
+            last_message_size_position: last_message_size_position,
+            last_message_size_position_in_blob: src.cache.last_message_size_position,
         }
     }
 
@@ -34,9 +49,9 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
     }
 
     fn divRoundClosest(n: usize, d: usize) -> usize {
-        let first = n/d;
+        let first = n / d;
         let last = (n % d != 0) as usize;
-        
+
         first + last
     }
 
@@ -44,10 +59,9 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         package.finalize();
 
         let buffer = &package.buffer;
-        let position_to_write = self.get_position_to_write();
+        //let position_to_write = self.get_position_to_write();
         let max_pages_to_write_single_round_trip = 2;
         let resize_pages_ration = 2;
-        let current_page = self.current_page;
         let last_position = self.cache.position_in_last_pages;
         let buf_length = buffer.len();
         // understand what to do with 4 last bytes
@@ -63,17 +77,18 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         let mut next_page = self.current_page;
         if cache_length != 0 {
             page_amount = cache_length / self.cache.page_size;
+
             // previous last 4 bytes on the same page
-            from = if last_position >= 4 {
-                next_page -= 1;
+            if last_position >= 4 {
+                //next_page -= 1;
                 // send last page
-                self.cache.data.len() - (last_position + self.cache.page_size * page_amount)
+                from = self.cache.page_size;
             } else {
-                next_page -= 2;
+                next_page -= 1;
                 // send all pages
-                0
+                from = 0;
             };
-            to = self.cache.data.len() - 4;
+            to = self.cache.page_size + last_position - 4;
             payload = self.cache.data[from..to].to_vec();
             payload.extend(buffer);
         } else {
@@ -88,7 +103,7 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         // self.page_blob.(start_page_no, max_pages_to_write, payload);
         self.page_blob
             .auto_ressize_and_save_pages(
-                current_page,
+                next_page,
                 max_pages_to_write_single_round_trip,
                 payload,
                 resize_pages_ration,
@@ -97,12 +112,15 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
 
         // update cache
         //let previous_page = self.current_page;
-        let pages_change = PageBlobSequenceWriter::<TPageBlob>::divRoundClosest(payload_size, self.cache.page_size);
+        let pages_change = PageBlobSequenceWriter::<TPageBlob>::divRoundClosest(
+            payload_size,
+            self.cache.page_size,
+        );
         self.current_page = next_page + pages_change;
         //let pages_added = self.current_page - previous_page;
 
         self.cache
-            .blob_is_increased(&copy_payload[..], buf_length - 4);
+            .blob_is_increased(&copy_payload[..], buf_length);
 
         return Ok(());
     }
@@ -140,8 +158,15 @@ mod tests {
         let mut reader = PageBlobSequenceReaderWithCache::new(my_page_blob, 5);
 
         {
-            let mut out_buffer = vec![0; size];
+            let mut size_buffer = [0u8; 4];
+            reader.read_message_size(&mut size_buffer).await.unwrap();
+            let message_size = i32::from_le_bytes(size_buffer) as usize;
+
+            let mut out_buffer = vec![0; message_size];
             reader.read(&mut out_buffer).await.unwrap();
+
+            reader.read_message_size(&mut size_buffer).await.unwrap();
+            let message_size = i32::from_le_bytes(size_buffer) as usize;
         }
 
         let mut writer = PageBlobSequenceWriter::new(reader);

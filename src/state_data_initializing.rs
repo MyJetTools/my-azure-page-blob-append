@@ -55,7 +55,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataInitializing<TMyPageBlob> {
         let msg_size = msg_size as usize;
         let mut buf: Vec<u8> = vec![0; msg_size];
 
-        let read = self.seq_reader.read(&mut buf).await?;
+        let read = self.seq_reader.read_message_size(&mut buf).await?;
 
         Ok(Some(buf))
     }

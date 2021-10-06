@@ -43,6 +43,31 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReaderWithCache<TPageBlob> {
         }
     }
 
+    pub async fn read_message_size(
+        &mut self,
+        out_buffer: &mut [u8],
+    ) -> Result<bool, AzureStorageError> {
+        let last_position = self.position;
+        let read = self.read(out_buffer).await?;
+        if read {
+            let mut not_null = false;
+            for byte in out_buffer.iter() {
+                if *byte > 0{
+                    not_null = true;
+                    break;
+                }
+            }
+
+            if not_null {
+                self.cache.last_message_size_position = last_position;
+            } else {
+                self.cache.fill_last_pages();
+            }
+        }
+
+        return Ok(read);
+    }
+
     pub async fn read(&mut self, out_buffer: &mut [u8]) -> Result<bool, AzureStorageError> {
         let blob_size = self.get_blob_size().await?;
 
@@ -72,6 +97,7 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReaderWithCache<TPageBlob> {
 
             let copied = self.cache.copy_to(&mut out_buffer[out_position..]);
 
+            self.position += copied;
             out_position += copied;
 
             if out_position == out_buffer.len() {
