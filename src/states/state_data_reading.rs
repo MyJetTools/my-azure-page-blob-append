@@ -1,7 +1,9 @@
 use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::AzureStorageError;
 
-use crate::{read_write::PageBlobSequenceReader, settings::AppendPageBlobSettings};
+use crate::{
+    read_write::PageBlobSequenceReader, settings::AppendPageBlobSettings, PageBlobAppendError,
+};
 
 use super::{state::ChangeState, StateDataNotInitialized};
 
@@ -63,14 +65,28 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         }
     }
 
-    pub async fn get_next_payload(&mut self) -> Result<GetNextPayloadResult, AzureStorageError> {
+    pub async fn get_next_payload(&mut self) -> Result<GetNextPayloadResult, PageBlobAppendError> {
         let payload_size = self.get_message_size().await?;
 
         if payload_size.is_none() {
+            println!(
+                "Can not read next payload_size. Blob is corrupted. Pos:{}",
+                self.seq_reader.read_position
+            );
             return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToCorrupted));
         }
 
         let payload_size = payload_size.unwrap();
+
+        if payload_size > self.settings.max_payload_size_protection {
+            println!(
+                "Payload size {} is to huge. Maximum allowed amount is {}. Pos:{}",
+                payload_size,
+                self.settings.max_payload_size_protection,
+                self.seq_reader.read_position
+            );
+            return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToCorrupted));
+        }
 
         if payload_size == 0 {
             return Ok(GetNextPayloadResult::ChangeState(

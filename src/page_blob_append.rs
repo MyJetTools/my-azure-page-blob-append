@@ -3,7 +3,7 @@ use my_azure_page_blob::*;
 use crate::{
     settings::AppendPageBlobSettings,
     states::{GetNextPayloadResult, StateDataNotInitialized, StateDataReading, StateDataWriting},
-    ChangeState, PageBlobAppendCacheError, PageBlobAppendCacheState,
+    ChangeState, PageBlobAppendCacheState, PageBlobAppendError,
 };
 
 pub struct PageBlobAppend<TMyPageBlob: MyPageBlob> {
@@ -33,18 +33,16 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
     pub async fn append_and_write<'s>(
         &mut self,
         payloads: &Vec<Vec<u8>>,
-    ) -> Result<(), PageBlobAppendCacheError> {
+    ) -> Result<(), PageBlobAppendError> {
         match self.state.as_mut().unwrap() {
-            PageBlobAppendCacheState::NotInitialized(_) => {
-                Err(PageBlobAppendCacheError::NotInitialized)
-            }
-            PageBlobAppendCacheState::Reading(_) => Err(PageBlobAppendCacheError::NotInitialized),
-            PageBlobAppendCacheState::Corrupted(_) => Err(PageBlobAppendCacheError::Corrupted),
+            PageBlobAppendCacheState::NotInitialized(_) => Err(PageBlobAppendError::NotInitialized),
+            PageBlobAppendCacheState::Reading(_) => Err(PageBlobAppendError::NotInitialized),
+            PageBlobAppendCacheState::Corrupted(_) => Err(PageBlobAppendError::Corrupted),
             PageBlobAppendCacheState::Writing(state) => state.append_and_write(payloads).await,
         }
     }
 
-    pub async fn get_next_payload(&mut self) -> Result<Option<Vec<u8>>, PageBlobAppendCacheError> {
+    pub async fn get_next_payload(&mut self) -> Result<Option<Vec<u8>>, PageBlobAppendError> {
         loop {
             match self.state.as_mut().unwrap() {
                 PageBlobAppendCacheState::NotInitialized(state) => {
@@ -66,7 +64,7 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
                     }
                 }
                 PageBlobAppendCacheState::Corrupted(_) => {
-                    return Err(PageBlobAppendCacheError::Corrupted);
+                    return Err(PageBlobAppendError::Corrupted);
                 }
                 PageBlobAppendCacheState::Writing(_) => return Ok(None),
             }

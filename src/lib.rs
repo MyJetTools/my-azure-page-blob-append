@@ -10,7 +10,7 @@ mod states;
 
 pub use page_blob_append::PageBlobAppend;
 
-pub use error::PageBlobAppendCacheError;
+pub use error::PageBlobAppendError;
 
 pub use page_blob_random_access::PageBlobRandomAccess;
 pub use settings::AppendPageBlobSettings;

@@ -3,7 +3,7 @@ use my_azure_page_blob::MyPageBlob;
 use crate::{
     read_write::{PackageBuilder, PageBlobSequenceWriter},
     settings::AppendPageBlobSettings,
-    PageBlobAppendCacheError,
+    PageBlobAppendError,
 };
 
 use super::StateDataReading;
@@ -29,7 +29,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataWriting<TMyPageBlob> {
     pub async fn append_and_write<'s>(
         &mut self,
         payloads: &Vec<Vec<u8>>,
-    ) -> Result<(), PageBlobAppendCacheError> {
+    ) -> Result<(), PageBlobAppendError> {
         let mut builder = PackageBuilder::new();
 
         for payload in payloads {
