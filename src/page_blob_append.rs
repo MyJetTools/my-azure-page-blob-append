@@ -137,13 +137,26 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
                     self.state = Some(PageBlobAppendCacheState::Reading(state_data));
                 }
             }
-            ChangeState::ToWriteMode => {
-                if let PageBlobAppendCacheState::Reading(state) = old_state.unwrap() {
+            ChangeState::ToWriteMode => match old_state.unwrap() {
+                PageBlobAppendCacheState::NotInitialized(state) => {
                     let state_data: StateDataWriting<TMyPageBlob> =
-                        StateDataWriting::from_initializing(state, &self.settings);
+                        StateDataWriting::from_not_initialized_state(state, &self.settings);
                     self.state = Some(PageBlobAppendCacheState::Writing(state_data));
                 }
-            }
+                PageBlobAppendCacheState::Reading(state) => {
+                    let state_data: StateDataWriting<TMyPageBlob> =
+                        StateDataWriting::from_reading_state(state, &self.settings);
+                    self.state = Some(PageBlobAppendCacheState::Writing(state_data));
+                }
+                PageBlobAppendCacheState::Corrupted(state) => {
+                    let state_data: StateDataWriting<TMyPageBlob> =
+                        StateDataWriting::from_corrupted_state(state, &self.settings);
+                    self.state = Some(PageBlobAppendCacheState::Writing(state_data));
+                }
+                PageBlobAppendCacheState::Writing(_) => {
+                    panic!("Can not convert from Writing to Writing state");
+                }
+            },
             ChangeState::ToCorrupted => {
                 self.state = Some(PageBlobAppendCacheState::to_corrupted(
                     old_state.unwrap(),

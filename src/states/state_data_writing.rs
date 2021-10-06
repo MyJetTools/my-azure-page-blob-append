@@ -6,19 +6,37 @@ use crate::{
     PageBlobAppendError,
 };
 
-use super::StateDataReading;
+use super::{StateDataCorrupted, StateDataNotInitialized, StateDataReading};
 
 pub struct StateDataWriting<TMyPageBlob: MyPageBlob> {
     pub seq_writer: PageBlobSequenceWriter<TMyPageBlob>,
 }
 
 impl<TMyPageBlob: MyPageBlob> StateDataWriting<TMyPageBlob> {
-    pub fn from_initializing(
+    pub fn from_reading_state(
         src: StateDataReading<TMyPageBlob>,
         settings: &AppendPageBlobSettings,
     ) -> Self {
         Self {
-            seq_writer: PageBlobSequenceWriter::new(src.seq_reader, settings),
+            seq_writer: PageBlobSequenceWriter::from_reading(src.seq_reader, settings),
+        }
+    }
+
+    pub fn from_not_initialized_state(
+        src: StateDataNotInitialized<TMyPageBlob>,
+        settings: &AppendPageBlobSettings,
+    ) -> Self {
+        Self {
+            seq_writer: PageBlobSequenceWriter::brand_new(src.page_blob, settings),
+        }
+    }
+
+    pub fn from_corrupted_state(
+        src: StateDataCorrupted<TMyPageBlob>,
+        settings: &AppendPageBlobSettings,
+    ) -> Self {
+        Self {
+            seq_writer: PageBlobSequenceWriter::brand_new(src.page_blob, settings),
         }
     }
 

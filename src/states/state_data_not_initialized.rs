@@ -17,33 +17,15 @@ impl<TMyPageBlob: MyPageBlob> StateDataNotInitialized<TMyPageBlob> {
     }
 
     pub async fn init(&mut self) -> Result<Option<ChangeState>, PageBlobAppendError> {
-        let mut attemt_no = 0;
-        loop {
-            attemt_no += 1;
-            let result = crate::with_retries::get_available_pages_amount(&mut self.page_blob).await;
+        let blob_size_in_pages =
+            crate::with_retries::get_available_pages_amount(&mut self.page_blob).await?;
 
-            if let Ok(blob_size_in_pages) = result {
-                self.blob_size_in_pages = blob_size_in_pages;
-                return Ok(Some(ChangeState::ToReadMode));
-            }
+        self.blob_size_in_pages = blob_size_in_pages;
 
-            let err = result.err().unwrap();
-
-            match &err {
-                my_azure_storage_sdk::AzureStorageError::ContainerNotFound => {
-                    return Err(PageBlobAppendError::BlobNotFound)
-                }
-                my_azure_storage_sdk::AzureStorageError::BlobNotFound => {
-                    return Err(PageBlobAppendError::BlobNotFound)
-                }
-                my_azure_storage_sdk::AzureStorageError::HyperError { err } => {
-                    println!(
-                        "We have problem on HTTP Level. Attempt: {} Err: {:?}",
-                        attemt_no, err
-                    );
-                }
-                _ => return Err(PageBlobAppendError::AzureStorageError(err)),
-            }
+        if self.blob_size_in_pages == 0 {
+            return Ok(Some(ChangeState::ToWriteMode));
+        } else {
+            return Ok(Some(ChangeState::ToReadMode));
         }
     }
 

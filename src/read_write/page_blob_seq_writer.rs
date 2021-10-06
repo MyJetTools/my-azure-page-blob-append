@@ -13,7 +13,16 @@ pub struct PageBlobSequenceWriter<TPageBlob: MyPageBlob> {
 }
 
 impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
-    pub fn new(
+    pub fn brand_new(page_blob: TPageBlob, settings: &AppendPageBlobSettings) -> Self {
+        Self {
+            page_blob: page_blob,
+            max_pages_to_write: 4000,
+            blob_autoressize_in_pages: settings.blob_auto_resize_in_pages,
+            write_cache: WriteCache::new(BLOB_PAGE_SIZE, None, 0),
+        }
+    }
+
+    pub fn from_reading(
         mut reader: PageBlobSequenceReader<TPageBlob>,
         settings: &AppendPageBlobSettings,
     ) -> Self {
@@ -78,7 +87,7 @@ mod tests {
             max_payload_size_protection: 1,
         };
 
-        let mut seq_writer = PageBlobSequenceWriter::new(reader, &settings);
+        let mut seq_writer = PageBlobSequenceWriter::from_reading(reader, &settings);
 
         let mut package_builder = PackageBuilder::new();
 
