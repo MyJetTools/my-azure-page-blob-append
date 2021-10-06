@@ -1,9 +1,9 @@
 use my_azure_page_blob::*;
 
 use crate::{
-    settings::AppendPageBlobSettings, state_data_initializing::GetNextPayloadResult, ChangeState,
-    PageBlobAppendCacheError, PageBlobAppendCacheState, StateDataInitializing,
-    StateDataNotInitialized, StateDataWriting,
+    settings::AppendPageBlobSettings,
+    states::{GetNextPayloadResult, StateDataNotInitialized, StateDataReading, StateDataWriting},
+    ChangeState, PageBlobAppendCacheError, PageBlobAppendCacheState,
 };
 
 pub struct PageBlobAppendCache<TMyPageBlob: MyPageBlob> {
@@ -29,11 +29,9 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
             PageBlobAppendCacheState::NotInitialized(_) => {
                 Err(PageBlobAppendCacheError::NotInitialized)
             }
-            PageBlobAppendCacheState::Initializing(_) => {
-                Err(PageBlobAppendCacheError::NotInitialized)
-            }
+            PageBlobAppendCacheState::Reading(_) => Err(PageBlobAppendCacheError::NotInitialized),
             PageBlobAppendCacheState::Corrupted(_) => Err(PageBlobAppendCacheError::Corrupted),
-            PageBlobAppendCacheState::Initialized(state) => state.append_and_write(payloads).await,
+            PageBlobAppendCacheState::Writing(state) => state.append_and_write(payloads).await,
         }
     }
 
@@ -46,7 +44,7 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
                         self.change_state(new_state);
                     }
                 }
-                PageBlobAppendCacheState::Initializing(state) => {
+                PageBlobAppendCacheState::Reading(state) => {
                     let result = state.get_next_payload().await?;
 
                     match result {
@@ -61,8 +59,20 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
                 PageBlobAppendCacheState::Corrupted(_) => {
                     return Err(PageBlobAppendCacheError::Corrupted);
                 }
-                PageBlobAppendCacheState::Initialized(_) => return Ok(None),
+                PageBlobAppendCacheState::Writing(_) => return Ok(None),
             }
+        }
+    }
+
+    pub fn get_blob_position(&self) -> usize {
+        if self.state.is_none() {
+            return 0;
+        }
+        match self.state.as_ref().unwrap() {
+            PageBlobAppendCacheState::NotInitialized(_) => 0,
+            PageBlobAppendCacheState::Reading(state) => state.get_blob_position(),
+            PageBlobAppendCacheState::Corrupted(_) => 0,
+            PageBlobAppendCacheState::Writing(state) => state.get_blob_position(),
         }
     }
 
@@ -73,16 +83,16 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCache<TMyPageBlob> {
         match change_state {
             ChangeState::ToInitialization => {
                 if let PageBlobAppendCacheState::NotInitialized(state) = old_state.unwrap() {
-                    let state_data: StateDataInitializing<TMyPageBlob> =
-                        StateDataInitializing::from_not_initialized(state, self.settings);
-                    self.state = Some(PageBlobAppendCacheState::Initializing(state_data));
+                    let state_data: StateDataReading<TMyPageBlob> =
+                        StateDataReading::from_not_initialized(state, self.settings);
+                    self.state = Some(PageBlobAppendCacheState::Reading(state_data));
                 }
             }
             ChangeState::ToInitialized => {
-                if let PageBlobAppendCacheState::Initializing(state) = old_state.unwrap() {
+                if let PageBlobAppendCacheState::Reading(state) = old_state.unwrap() {
                     let state_data: StateDataWriting<TMyPageBlob> =
                         StateDataWriting::from_initializing(state, &self.settings);
-                    self.state = Some(PageBlobAppendCacheState::Initialized(state_data));
+                    self.state = Some(PageBlobAppendCacheState::Writing(state_data));
                 }
             }
             ChangeState::ToCorrupted => {

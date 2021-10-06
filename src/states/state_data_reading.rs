@@ -1,25 +1,23 @@
 use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::AzureStorageError;
 
-use crate::{
-    read_write::PageBlobSequenceReader, settings::AppendPageBlobSettings, ChangeState,
-    StateDataNotInitialized,
-};
+use crate::{read_write::PageBlobSequenceReader, settings::AppendPageBlobSettings};
+
+use super::{state::ChangeState, StateDataNotInitialized};
 
 pub enum GetNextPayloadResult {
     NextPayload(Vec<u8>),
     ChangeState(ChangeState),
 }
 
-pub struct StateDataInitializing<TMyPageBlob: MyPageBlob> {
+pub struct StateDataReading<TMyPageBlob: MyPageBlob> {
     pub seq_reader: PageBlobSequenceReader<TMyPageBlob>,
     pub pages_have_read: usize,
-    pub blob_position: usize,
     pub settings: AppendPageBlobSettings,
     pub blob_size_in_pages: usize,
 }
 
-impl<TMyPageBlob: MyPageBlob> StateDataInitializing<TMyPageBlob> {
+impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
     pub fn from_not_initialized(
         not_initialized: StateDataNotInitialized<TMyPageBlob>,
         settings: AppendPageBlobSettings,
@@ -30,10 +28,14 @@ impl<TMyPageBlob: MyPageBlob> StateDataInitializing<TMyPageBlob> {
                 settings.cache_capacity_in_pages,
             ),
             pages_have_read: 0,
-            blob_position: 0,
+
             settings,
             blob_size_in_pages: not_initialized.blob_size_in_pages,
         }
+    }
+
+    pub fn get_blob_position(&self) -> usize {
+        self.seq_reader.read_position
     }
 
     async fn get_message_size(&mut self) -> Result<Option<i32>, AzureStorageError> {

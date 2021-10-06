@@ -1,12 +1,12 @@
 use my_azure_page_blob::MyPageBlob;
 
-use crate::{StateDataInitializing, StateDataNotInitialized, StateDataWriting};
+use super::{StateDataNotInitialized, StateDataReading, StateDataWriting};
 
 pub enum PageBlobAppendCacheState<TMyPageBlob: MyPageBlob> {
     NotInitialized(StateDataNotInitialized<TMyPageBlob>),
-    Initializing(StateDataInitializing<TMyPageBlob>),
+    Reading(StateDataReading<TMyPageBlob>),
     Corrupted(TMyPageBlob),
-    Initialized(StateDataWriting<TMyPageBlob>),
+    Writing(StateDataWriting<TMyPageBlob>),
 }
 
 impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
@@ -15,12 +15,12 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
             PageBlobAppendCacheState::NotInitialized(state) => {
                 PageBlobAppendCacheState::Corrupted(state.page_blob)
             }
-            PageBlobAppendCacheState::Initializing(state) => {
+            PageBlobAppendCacheState::Reading(state) => {
                 PageBlobAppendCacheState::Corrupted(state.seq_reader.page_blob)
             }
             PageBlobAppendCacheState::Corrupted(blob) => PageBlobAppendCacheState::Corrupted(blob),
-            PageBlobAppendCacheState::Initialized(state) => {
-                PageBlobAppendCacheState::Corrupted(state.page_blob_seq_writer.page_blob)
+            PageBlobAppendCacheState::Writing(state) => {
+                PageBlobAppendCacheState::Corrupted(state.seq_writer.page_blob)
             }
         }
     }
