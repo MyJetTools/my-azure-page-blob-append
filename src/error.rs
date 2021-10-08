@@ -3,6 +3,7 @@ use my_azure_storage_sdk::AzureStorageError;
 pub struct CorruptedErrorInfo {
     pub pos: usize,
     pub msg: String,
+    pub last_page: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]

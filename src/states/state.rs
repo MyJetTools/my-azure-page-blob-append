@@ -18,7 +18,7 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
                 StateDataCorrupted::from_not_initialized_state(state, settings, info.pos),
             ),
             PageBlobAppendCacheState::Reading(state) => PageBlobAppendCacheState::Corrupted(
-                StateDataCorrupted::from_reading_state(state, settings, info.pos),
+                StateDataCorrupted::from_reading_state(state, settings),
             ),
             _ => {
                 panic!(

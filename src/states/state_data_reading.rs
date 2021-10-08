@@ -41,7 +41,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         self.seq_reader.get_blob_position()
     }
 
-    async fn get_message_size(&mut self, start_pos: usize) -> Result<i32, PageBlobAppendError> {
+    async fn get_message_size(&mut self) -> Result<i32, PageBlobAppendError> {
         let mut buf = [0u8; 4];
 
         let read = self.seq_reader.read(&mut buf).await?;
@@ -50,7 +50,8 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
             Ok(i32::from_le_bytes(buf))
         } else {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
-                pos: start_pos,
+                pos: 0,
+                last_page: None,
                 msg: format!(
                     "Can not read next payload_size. Blob is corrupted. Pos:{}",
                     self.seq_reader.get_blob_position()
@@ -59,11 +60,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         }
     }
 
-    async fn get_payload(
-        &mut self,
-        msg_size: i32,
-        start_pos: usize,
-    ) -> Result<Vec<u8>, PageBlobAppendError> {
+    async fn get_payload(&mut self, msg_size: i32) -> Result<Vec<u8>, PageBlobAppendError> {
         let msg_size = msg_size as usize;
         let mut buf: Vec<u8> = vec![0; msg_size];
 
@@ -73,7 +70,8 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
             Ok(buf)
         } else {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
-                pos: start_pos,
+                last_page: None,
+                pos: 0,
                 msg: format!(
                     "Not enought data to read payload. Blob is corrupted. Pos:{}",
                     self.seq_reader.get_blob_position()
@@ -83,13 +81,27 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
     }
 
     pub async fn get_next_payload(&mut self) -> Result<GetNextPayloadResult, PageBlobAppendError> {
-        let start_pos = self.seq_reader.get_blob_position();
+        let (start_pos, last_page) = self.seq_reader.read_cache.get_last_page();
 
-        let payload_size = self.get_message_size(start_pos).await?;
+        let payload_size = self.get_message_size().await;
+
+        if let Err(err) = payload_size {
+            if let PageBlobAppendError::Corrupted(mut info) = err {
+                info.pos = start_pos;
+                info.last_page = last_page;
+
+                return Err(PageBlobAppendError::Corrupted(info));
+            } else {
+                return Err(err);
+            }
+        }
+
+        let payload_size = payload_size.unwrap();
 
         if payload_size > self.settings.max_payload_size_protection {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
                 pos: start_pos,
+                last_page: last_page,
                 msg: format!(
                     "Payload size {} is too huge. Maximum allowed amount is {}.",
                     payload_size, self.settings.max_payload_size_protection,
@@ -101,9 +113,20 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
             return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToWriteMode));
         }
 
-        let payload = self.get_payload(payload_size, start_pos).await?;
+        let payload = self.get_payload(payload_size).await;
 
-        return Ok(GetNextPayloadResult::NextPayload(payload));
+        if let Err(err) = payload {
+            if let PageBlobAppendError::Corrupted(mut info) = err {
+                info.pos = start_pos;
+                info.last_page = last_page;
+
+                return Err(PageBlobAppendError::Corrupted(info));
+            } else {
+                return Err(err);
+            }
+        }
+
+        return Ok(GetNextPayloadResult::NextPayload(payload.unwrap()));
     }
 
     pub async fn init_blob(

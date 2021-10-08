@@ -9,18 +9,20 @@ pub struct StateDataCorrupted<TMyPageBlob: MyPageBlob> {
     pub page_blob: TMyPageBlob,
     settings: AppendPageBlobSettings,
     pub start_pos: usize,
+    pub last_page: Option<Vec<u8>>,
 }
 
 impl<TMyPageBlob: MyPageBlob> StateDataCorrupted<TMyPageBlob> {
     pub fn from_reading_state(
-        state: StateDataReading<TMyPageBlob>,
+        mut state: StateDataReading<TMyPageBlob>,
         settings: AppendPageBlobSettings,
-        start_pos: usize,
     ) -> Self {
+        let (write_position, last_page) = state.seq_reader.read_cache.get_last_page();
         Self {
             page_blob: state.seq_reader.page_blob,
             settings,
-            start_pos,
+            start_pos: write_position,
+            last_page,
         }
     }
 
@@ -33,6 +35,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataCorrupted<TMyPageBlob> {
             page_blob: state.page_blob,
             settings,
             start_pos,
+            last_page: None,
         }
     }
 

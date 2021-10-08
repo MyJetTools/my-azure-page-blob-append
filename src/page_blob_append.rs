@@ -193,3 +193,56 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use my_azure_page_blob::MyPageBlobMock;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_corrupted_and_restored() {
+        const MSG_SIZE: i32 = 512;
+
+        let mut page_blob = MyPageBlobMock::new();
+        page_blob.create_container_if_not_exist().await.unwrap();
+
+        page_blob.create_if_not_exists(0).await.unwrap();
+
+        let mut builder: Vec<u8> = Vec::new();
+        builder.extend(&MSG_SIZE.to_le_bytes());
+        builder.extend(&[3u8; MSG_SIZE as usize]);
+        builder.extend(&[120u8; (MSG_SIZE*2) as usize]);
+
+        page_blob
+            .auto_ressize_and_save_pages(0, 10, builder, 1)
+            .await
+            .unwrap();
+
+        let settings = AppendPageBlobSettings {
+            blob_auto_resize_in_pages: 1,
+            cache_capacity_in_pages: 10,
+            max_pages_to_write_single_round_trip: 1000,
+            max_payload_size_protection: 1024 * 1024,
+        };
+        let mut reader = PageBlobAppend::new(page_blob, settings);
+
+        let payload = reader.get_next_payload().await.unwrap();
+
+        assert_eq!(&[3u8; MSG_SIZE as usize], payload.unwrap().as_slice());
+
+        let payload = reader.get_next_payload().await;
+
+        let err = payload.err().unwrap();
+        assert_eq!(true, err.is_corrupted());
+
+        reader.init_blob(None).await.unwrap();
+
+        let buff_to_write = vec![5u8, 5u8, 5u8, 5u8];
+        reader.append_and_write(&vec![buff_to_write]).await.unwrap();
+
+        let result_buffer = reader.get_page_blob().download().await.unwrap();
+
+        assert_eq!(&[4u8,0,0,0,5,5,5,5], &result_buffer[512..520]);
+    }
+}
