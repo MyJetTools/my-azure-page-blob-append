@@ -141,10 +141,26 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
 
         match change_state {
             ChangeState::ToReadMode => {
-                if let PageBlobAppendCacheState::NotInitialized(state) = old_state.unwrap() {
-                    let state_data: StateDataReading<TMyPageBlob> =
-                        StateDataReading::from_not_initialized(state, self.settings);
-                    self.state = Some(PageBlobAppendCacheState::Reading(state_data));
+                let old_state = old_state.unwrap();
+
+                match old_state {
+                    PageBlobAppendCacheState::NotInitialized(state) => {
+                        let state_data: StateDataReading<TMyPageBlob> =
+                            StateDataReading::from_not_initialized(state, self.settings);
+                        self.state = Some(PageBlobAppendCacheState::Reading(state_data));
+                    }
+                    PageBlobAppendCacheState::Reading(_) => {
+                        self.state = Some(old_state);
+                        panic!("We are not converting from ReadMode to ReadMode");
+                    }
+                    PageBlobAppendCacheState::Corrupted(_) => {
+                        self.state = Some(old_state);
+                        panic!("We are not converting from Corrupted to ReadMode");
+                    }
+                    PageBlobAppendCacheState::Writing(_) => {
+                        self.state = Some(old_state);
+                        panic!("We are not converting from Writing to ReadMode");
+                    }
                 }
             }
             ChangeState::ToWriteMode => match old_state.unwrap() {
