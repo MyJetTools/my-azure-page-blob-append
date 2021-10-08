@@ -37,7 +37,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
     }
 
     pub fn get_blob_position(&self) -> usize {
-        self.seq_reader.read_position
+        self.seq_reader.get_blob_position()
     }
 
     async fn get_message_size(&mut self) -> Result<Option<i32>, AzureStorageError> {
@@ -71,7 +71,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         if payload_size.is_none() {
             println!(
                 "Can not read next payload_size. Blob is corrupted. Pos:{}",
-                self.seq_reader.read_position
+                self.seq_reader.get_blob_position()
             );
             return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToCorrupted));
         }
@@ -83,7 +83,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
                 "Payload size {} is to huge. Maximum allowed amount is {}. Pos:{}",
                 payload_size,
                 self.settings.max_payload_size_protection,
-                self.seq_reader.read_position
+                self.seq_reader.get_blob_position()
             );
             return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToCorrupted));
         }

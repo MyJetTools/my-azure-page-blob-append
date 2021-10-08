@@ -3,7 +3,7 @@ pub struct ReadCache {
     last_page: Option<Vec<u8>>,
     read_position: usize,
     page_size: usize,
-    read_blob_position: usize,
+    pub read_blob_position: usize,
 }
 
 impl ReadCache {
@@ -143,6 +143,7 @@ mod tests {
         assert_eq!(dest, [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 255u8]);
 
         assert_eq!(buffer.read_position, 0);
+        assert_eq!(buffer.read_blob_position, 8);
     }
 
     #[test]
@@ -177,6 +178,7 @@ mod tests {
         assert_eq!(dest, [0u8, 1u8]);
 
         assert_eq!(buffer.read_position, 2);
+        assert_eq!(buffer.read_blob_position, 2);
 
         let copied = buffer.copy_to(&mut dest);
 
@@ -184,6 +186,7 @@ mod tests {
         assert_eq!(dest, [2u8, 3u8]);
 
         assert_eq!(buffer.read_position, 4);
+        assert_eq!(buffer.read_blob_position, 4);
 
         let copied = buffer.copy_to(&mut dest);
 
@@ -191,6 +194,7 @@ mod tests {
         assert_eq!(dest, [4u8, 5u8]);
 
         assert_eq!(buffer.read_position, 6);
+        assert_eq!(buffer.read_blob_position, 6);
 
         let copied = buffer.copy_to(&mut dest);
 
@@ -198,6 +202,7 @@ mod tests {
         assert_eq!(dest, [6u8, 7u8]);
 
         assert_eq!(buffer.read_position, 0);
+        assert_eq!(buffer.read_blob_position, 8);
     }
 
     #[test]

@@ -10,7 +10,6 @@ pub struct PageBlobSequenceReader<TPageBlob: MyPageBlob> {
     pub read_cache: ReadCache,
     pub blob_size: Option<usize>,
     pub capacity_in_pages: usize,
-    pub read_position: usize,
     pub blob_size_in_pages: usize,
 }
 
@@ -20,7 +19,6 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReader<TPageBlob> {
             page_blob,
             capacity_in_pages,
             current_page: 0,
-            read_position: 0,
             read_cache: ReadCache::new(BLOB_PAGE_SIZE),
             blob_size: None,
             blob_size_in_pages: 0,
@@ -44,10 +42,14 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceReader<TPageBlob> {
         }
     }
 
+    pub fn get_blob_position(&self) -> usize {
+        self.read_cache.read_blob_position
+    }
+
     pub async fn read(&mut self, out_buffer: &mut [u8]) -> Result<bool, AzureStorageError> {
         let blob_size = self.get_blob_size().await?;
 
-        if self.read_position + out_buffer.len() >= blob_size {
+        if self.read_cache.read_blob_position + out_buffer.len() >= blob_size {
             return Ok(false);
         }
 
@@ -99,6 +101,7 @@ mod tests {
         page_blob.create_if_not_exists(0).await.unwrap();
 
         let mut reader = PageBlobSequenceReader::new(page_blob, 10);
+        assert_eq!(reader.read_cache.read_blob_position, 0);
 
         let blob_size = reader.get_blob_size().await.unwrap();
 
