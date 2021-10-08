@@ -49,6 +49,6 @@ impl<TMyPageBlob: MyPageBlob> StateDataCorrupted<TMyPageBlob> {
             .await?;
         }
 
-        Ok(ChangeState::ToReadMode)
+        Ok(ChangeState::ToWriteMode)
     }
 }
