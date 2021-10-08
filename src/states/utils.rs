@@ -26,7 +26,7 @@ pub async fn copy_blob<TMyPageBlob: MyPageBlob>(
         let payload = crate::with_retries::read_pages(src, page_no, pages_to_copy).await?;
         crate::with_retries::write_pages(dest, page_no, max_pages_per_write, payload).await?;
 
-        page_no += page_no;
+        page_no += pages_to_copy;
     }
 
     Ok(())
