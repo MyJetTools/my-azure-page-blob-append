@@ -84,7 +84,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         let (start_pos, last_page) = self
             .seq_reader
             .read_cache
-            .get_last_page_remaining_content(crate::read_write::utils::END_MARKER.len());
+            .get_last_page_remaining_content(0);
 
         let payload_size = self.get_message_size().await;
 

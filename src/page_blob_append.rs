@@ -211,8 +211,9 @@ mod tests {
 
         let mut builder: Vec<u8> = Vec::new();
         builder.extend(&MSG_SIZE.to_le_bytes());
+
         builder.extend(&[3u8; MSG_SIZE as usize]);
-        builder.extend(&[120u8; (MSG_SIZE*2) as usize]);
+        builder.extend(&[120u8; (MSG_SIZE * 2) as usize]);
 
         page_blob
             .auto_ressize_and_save_pages(0, 10, builder, 1)
@@ -243,6 +244,6 @@ mod tests {
 
         let result_buffer = reader.get_page_blob().download().await.unwrap();
 
-        assert_eq!(&[4u8,0,0,0,5,5,5,5], &result_buffer[512..520]);
+        assert_eq!(&[4u8, 0, 0, 0, 5, 5, 5, 5], &result_buffer[516..524]);
     }
 }
