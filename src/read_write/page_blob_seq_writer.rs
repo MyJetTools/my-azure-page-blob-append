@@ -22,6 +22,19 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         }
     }
 
+    pub fn from_corrupted(
+        page_blob: TPageBlob,
+        settings: &AppendPageBlobSettings,
+        write_pos: usize,
+    ) -> Self {
+        Self {
+            page_blob: page_blob,
+            max_pages_to_write: 4000,
+            blob_autoressize_in_pages: settings.blob_auto_resize_in_pages,
+            write_cache: WriteCache::new(BLOB_PAGE_SIZE, None, write_pos),
+        }
+    }
+
     pub fn from_reading(
         mut reader: PageBlobSequenceReader<TPageBlob>,
         settings: &AppendPageBlobSettings,

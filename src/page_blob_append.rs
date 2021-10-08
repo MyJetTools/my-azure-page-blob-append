@@ -38,7 +38,7 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
             PageBlobAppendCacheState::NotInitialized(_) => Err(PageBlobAppendError::NotInitialized),
             PageBlobAppendCacheState::Reading(_) => Err(PageBlobAppendError::NotInitialized),
             PageBlobAppendCacheState::Corrupted(state) => {
-                Err(PageBlobAppendError::Corrupted(format!(
+                Err(PageBlobAppendError::Forbidden(format!(
                     "You can not write to PageBlobAppend {}/{}. It's corrupted",
                     state.page_blob.get_container_name(),
                     state.page_blob.get_blob_name()
@@ -58,20 +58,27 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
                     }
                 }
                 PageBlobAppendCacheState::Reading(state) => {
-                    let result = state.get_next_payload().await?;
+                    let result = state.get_next_payload().await;
 
                     match result {
-                        GetNextPayloadResult::NextPayload(payload) => return Ok(Some(payload)),
+                        Ok(result) => match result {
+                            GetNextPayloadResult::NextPayload(payload) => return Ok(Some(payload)),
 
-                        GetNextPayloadResult::ChangeState(new_state) => {
-                            self.change_state(new_state);
-                            return Ok(None);
+                            GetNextPayloadResult::ChangeState(new_state) => {
+                                self.change_state(new_state);
+                                return Ok(None);
+                            }
+                        },
+
+                        Err(err) => {
+                            self.handle_error(&err);
+                            return Err(err);
                         }
                     }
                 }
                 PageBlobAppendCacheState::Corrupted(_) => {
-                    return Err(PageBlobAppendError::Corrupted(
-                        "You can not get next payload. Blob is corrupted".to_string(),
+                    return Err(PageBlobAppendError::Forbidden(
+                        "Getting next payload is forbidden in corrupted mode".to_string(),
                     ));
                 }
                 PageBlobAppendCacheState::Writing(_) => return Ok(None),
@@ -122,6 +129,12 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
         }
     }
 
+    fn handle_error(&mut self, err: &PageBlobAppendError) {
+        if let PageBlobAppendError::Corrupted(info) = err {
+            self.change_state(ChangeState::ToCorrupted(info.clone()));
+        }
+    }
+
     fn change_state(&mut self, change_state: ChangeState) {
         let mut old_state = None;
         std::mem::swap(&mut old_state, &mut self.state);
@@ -154,9 +167,10 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
                     panic!("Can not convert from Writing to Writing state");
                 }
             },
-            ChangeState::ToCorrupted => {
+            ChangeState::ToCorrupted(info) => {
                 self.state = Some(PageBlobAppendCacheState::to_corrupted(
                     old_state.unwrap(),
+                    &info,
                     self.settings,
                 ));
             }

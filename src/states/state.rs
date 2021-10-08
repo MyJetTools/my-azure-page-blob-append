@@ -1,6 +1,6 @@
 use my_azure_page_blob::MyPageBlob;
 
-use crate::AppendPageBlobSettings;
+use crate::{error::CorruptedErrorInfo, AppendPageBlobSettings};
 
 use super::{StateDataCorrupted, StateDataNotInitialized, StateDataReading, StateDataWriting};
 
@@ -12,13 +12,13 @@ pub enum PageBlobAppendCacheState<TMyPageBlob: MyPageBlob> {
 }
 
 impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
-    pub fn to_corrupted(self, settings: AppendPageBlobSettings) -> Self {
+    pub fn to_corrupted(self, info: &CorruptedErrorInfo, settings: AppendPageBlobSettings) -> Self {
         match self {
             PageBlobAppendCacheState::NotInitialized(state) => PageBlobAppendCacheState::Corrupted(
-                StateDataCorrupted::from_not_initialized_state(state, settings),
+                StateDataCorrupted::from_not_initialized_state(state, settings, info.pos),
             ),
             PageBlobAppendCacheState::Reading(state) => PageBlobAppendCacheState::Corrupted(
-                StateDataCorrupted::from_reading_state(state, settings),
+                StateDataCorrupted::from_reading_state(state, settings, info.pos),
             ),
             _ => {
                 panic!(
@@ -42,5 +42,5 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
 pub enum ChangeState {
     ToReadMode,
     ToWriteMode,
-    ToCorrupted,
+    ToCorrupted(CorruptedErrorInfo),
 }

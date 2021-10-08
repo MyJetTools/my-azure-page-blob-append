@@ -36,7 +36,11 @@ impl<TMyPageBlob: MyPageBlob> StateDataWriting<TMyPageBlob> {
         settings: &AppendPageBlobSettings,
     ) -> Self {
         Self {
-            seq_writer: PageBlobSequenceWriter::brand_new(src.page_blob, settings),
+            seq_writer: PageBlobSequenceWriter::from_corrupted(
+                src.page_blob,
+                settings,
+                src.start_pos,
+            ),
         }
     }
 

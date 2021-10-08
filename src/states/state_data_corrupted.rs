@@ -8,26 +8,31 @@ use super::{StateDataNotInitialized, StateDataReading};
 pub struct StateDataCorrupted<TMyPageBlob: MyPageBlob> {
     pub page_blob: TMyPageBlob,
     settings: AppendPageBlobSettings,
+    pub start_pos: usize,
 }
 
 impl<TMyPageBlob: MyPageBlob> StateDataCorrupted<TMyPageBlob> {
     pub fn from_reading_state(
         state: StateDataReading<TMyPageBlob>,
         settings: AppendPageBlobSettings,
+        start_pos: usize,
     ) -> Self {
         Self {
             page_blob: state.seq_reader.page_blob,
             settings,
+            start_pos,
         }
     }
 
     pub fn from_not_initialized_state(
         state: StateDataNotInitialized<TMyPageBlob>,
         settings: AppendPageBlobSettings,
+        start_pos: usize,
     ) -> Self {
         Self {
             page_blob: state.page_blob,
             settings,
+            start_pos,
         }
     }
 
@@ -43,8 +48,6 @@ impl<TMyPageBlob: MyPageBlob> StateDataCorrupted<TMyPageBlob> {
             )
             .await?;
         }
-
-        crate::with_retries::resize_page_blob(&mut self.page_blob, 0).await?;
 
         Ok(ChangeState::ToReadMode)
     }

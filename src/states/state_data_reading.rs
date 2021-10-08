@@ -2,7 +2,8 @@ use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::AzureStorageError;
 
 use crate::{
-    read_write::PageBlobSequenceReader, settings::AppendPageBlobSettings, PageBlobAppendError,
+    error::CorruptedErrorInfo, read_write::PageBlobSequenceReader,
+    settings::AppendPageBlobSettings, PageBlobAppendError,
 };
 
 use super::{state::ChangeState, StateDataNotInitialized};
@@ -40,65 +41,69 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         self.seq_reader.get_blob_position()
     }
 
-    async fn get_message_size(&mut self) -> Result<Option<i32>, AzureStorageError> {
+    async fn get_message_size(&mut self, start_pos: usize) -> Result<i32, PageBlobAppendError> {
         let mut buf = [0u8; 4];
 
         let read = self.seq_reader.read(&mut buf).await?;
 
         if read {
-            Ok(Some(i32::from_le_bytes(buf)))
+            Ok(i32::from_le_bytes(buf))
         } else {
-            Ok(None)
+            return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
+                pos: start_pos,
+                msg: format!(
+                    "Can not read next payload_size. Blob is corrupted. Pos:{}",
+                    self.seq_reader.get_blob_position()
+                ),
+            }));
         }
     }
 
-    async fn get_payload(&mut self, msg_size: i32) -> Result<Option<Vec<u8>>, AzureStorageError> {
+    async fn get_payload(
+        &mut self,
+        msg_size: i32,
+        start_pos: usize,
+    ) -> Result<Vec<u8>, PageBlobAppendError> {
         let msg_size = msg_size as usize;
         let mut buf: Vec<u8> = vec![0; msg_size];
 
         let read_result = self.seq_reader.read(&mut buf).await?;
 
         if read_result {
-            Ok(Some(buf))
+            Ok(buf)
         } else {
-            Ok(None)
+            return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
+                pos: start_pos,
+                msg: format!(
+                    "Not enought data to read payload. Blob is corrupted. Pos:{}",
+                    self.seq_reader.get_blob_position()
+                ),
+            }));
         }
     }
 
     pub async fn get_next_payload(&mut self) -> Result<GetNextPayloadResult, PageBlobAppendError> {
-        let payload_size = self.get_message_size().await?;
+        let start_pos = self.seq_reader.get_blob_position();
 
-        if payload_size.is_none() {
-            println!(
-                "Can not read next payload_size. Blob is corrupted. Pos:{}",
-                self.seq_reader.get_blob_position()
-            );
-            return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToCorrupted));
-        }
-
-        let payload_size = payload_size.unwrap();
+        let payload_size = self.get_message_size(start_pos).await?;
 
         if payload_size > self.settings.max_payload_size_protection {
-            println!(
-                "Payload size {} is to huge. Maximum allowed amount is {}. Pos:{}",
-                payload_size,
-                self.settings.max_payload_size_protection,
-                self.seq_reader.get_blob_position()
-            );
-            return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToCorrupted));
+            return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
+                pos: start_pos,
+                msg: format!(
+                    "Payload size {} is to huge. Maximum allowed amount is {}.",
+                    payload_size, self.settings.max_payload_size_protection,
+                ),
+            }));
         }
 
         if payload_size == 0 {
             return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToWriteMode));
         }
 
-        let payload = self.get_payload(payload_size).await?;
+        let payload = self.get_payload(payload_size, start_pos).await?;
 
-        if payload.is_none() {
-            return Ok(GetNextPayloadResult::ChangeState(ChangeState::ToCorrupted));
-        }
-
-        return Ok(GetNextPayloadResult::NextPayload(payload.unwrap()));
+        return Ok(GetNextPayloadResult::NextPayload(payload));
     }
 
     pub async fn init_blob(
