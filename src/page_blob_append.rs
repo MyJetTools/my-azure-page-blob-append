@@ -90,12 +90,9 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
                 Ok(())
             }
             PageBlobAppendCacheState::Reading(state) => {
-                Err(PageBlobAppendError::Forbidden(format!(
-                    "Operation is forbidden. PageBlobAppend {}/{} append is in the {} mode",
-                    state.seq_reader.page_blob.get_container_name(),
-                    state.seq_reader.page_blob.get_blob_name(),
-                    "Reading"
-                )))
+                let change_state = state.init_blob(backup_blob).await?;
+                self.change_state(change_state);
+                Ok(())
             }
             PageBlobAppendCacheState::Corrupted(state) => {
                 let change_state = state.init_blob(backup_blob).await?;

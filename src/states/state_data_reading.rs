@@ -100,4 +100,22 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
 
         return Ok(GetNextPayloadResult::NextPayload(payload.unwrap()));
     }
+
+    pub async fn init_blob(
+        &mut self,
+        backup_blob: Option<&mut TMyPageBlob>,
+    ) -> Result<ChangeState, AzureStorageError> {
+        if let Some(backup_blob) = backup_blob {
+            super::utils::copy_blob(
+                &mut self.seq_reader.page_blob,
+                backup_blob,
+                self.settings.max_pages_to_write_single_round_trip,
+            )
+            .await?;
+        }
+
+        crate::with_retries::resize_page_blob(&mut self.seq_reader.page_blob, 0).await?;
+
+        Ok(ChangeState::ToWriteMode)
+    }
 }

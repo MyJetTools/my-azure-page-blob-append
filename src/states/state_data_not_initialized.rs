@@ -32,6 +32,6 @@ impl<TMyPageBlob: MyPageBlob> StateDataNotInitialized<TMyPageBlob> {
     pub async fn init_blob(&mut self) -> Result<ChangeState, AzureStorageError> {
         crate::with_retries::create_container_if_not_exist(&mut self.page_blob).await?;
         crate::with_retries::create_blob_if_not_exists(&mut self.page_blob, 0).await?;
-        Ok(ChangeState::ToReadMode)
+        Ok(ChangeState::ToWriteMode)
     }
 }
