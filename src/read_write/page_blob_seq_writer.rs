@@ -40,7 +40,9 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
         mut reader: PageBlobSequenceReader<TPageBlob>,
         settings: &AppendPageBlobSettings,
     ) -> Self {
-        let (write_position, last_page) = reader.read_cache.get_last_page();
+        let (write_position, last_page) = reader
+            .read_cache
+            .get_last_page_remaining_content(crate::read_write::utils::END_MARKER.len());
         Self {
             page_blob: reader.page_blob,
             max_pages_to_write: 4000,

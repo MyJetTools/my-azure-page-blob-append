@@ -81,7 +81,10 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
     }
 
     pub async fn get_next_payload(&mut self) -> Result<GetNextPayloadResult, PageBlobAppendError> {
-        let (start_pos, last_page) = self.seq_reader.read_cache.get_last_page();
+        let (start_pos, last_page) = self
+            .seq_reader
+            .read_cache
+            .get_last_page_remaining_content(crate::read_write::utils::END_MARKER.len());
 
         let payload_size = self.get_message_size().await;
 

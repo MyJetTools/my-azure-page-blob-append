@@ -160,7 +160,9 @@ mod tests {
 
         assert_eq!([0u8, 0u8, 0u8, 0u8], data);
 
-        let (blob_position, last_page) = reader.read_cache.get_last_page();
+        let (blob_position, last_page) = reader
+            .read_cache
+            .get_last_page_remaining_content(crate::read_write::utils::END_MARKER.len());
 
         assert_eq!(15, blob_position);
 
@@ -208,7 +210,9 @@ mod tests {
 
         //Asserting Last Page and position
 
-        let (blob_position, last_page) = reader.read_cache.get_last_page();
+        let (blob_position, last_page) = reader
+            .read_cache
+            .get_last_page_remaining_content(crate::read_write::utils::END_MARKER.len());
 
         assert_eq!(512, blob_position);
 
@@ -254,7 +258,9 @@ mod tests {
 
         //Asserting Last Page and position
 
-        let (blob_position, last_page) = reader.read_cache.get_last_page();
+        let (blob_position, last_page) = reader
+            .read_cache
+            .get_last_page_remaining_content(crate::read_write::utils::END_MARKER.len());
 
         assert_eq!(516, blob_position);
 
