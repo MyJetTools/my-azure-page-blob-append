@@ -15,10 +15,10 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
     pub fn to_corrupted(self, info: &CorruptedErrorInfo, settings: AppendPageBlobSettings) -> Self {
         match self {
             PageBlobAppendCacheState::NotInitialized(state) => PageBlobAppendCacheState::Corrupted(
-                StateDataCorrupted::from_not_initialized_state(state, settings, info.pos),
+                StateDataCorrupted::from_not_initialized_state(state, settings, info),
             ),
             PageBlobAppendCacheState::Reading(state) => PageBlobAppendCacheState::Corrupted(
-                StateDataCorrupted::from_reading_state(state, settings),
+                StateDataCorrupted::from_reading_state(state, settings, info),
             ),
             _ => {
                 panic!(

@@ -1,41 +1,38 @@
 use my_azure_page_blob::MyPageBlob;
 use my_azure_storage_sdk::AzureStorageError;
 
-use crate::{AppendPageBlobSettings, ChangeState};
+use crate::{error::CorruptedErrorInfo, AppendPageBlobSettings, ChangeState};
 
 use super::{StateDataNotInitialized, StateDataReading};
 
 pub struct StateDataCorrupted<TMyPageBlob: MyPageBlob> {
     pub page_blob: TMyPageBlob,
     settings: AppendPageBlobSettings,
-    pub start_pos: usize,
-    pub last_page: Option<Vec<u8>>,
+    pub info: CorruptedErrorInfo,
 }
 
 impl<TMyPageBlob: MyPageBlob> StateDataCorrupted<TMyPageBlob> {
     pub fn from_reading_state(
-        mut state: StateDataReading<TMyPageBlob>,
+        state: StateDataReading<TMyPageBlob>,
         settings: AppendPageBlobSettings,
+        info: &CorruptedErrorInfo,
     ) -> Self {
-        let (write_position, last_page) = state.seq_reader.read_cache.get_last_page();
         Self {
             page_blob: state.seq_reader.page_blob,
             settings,
-            start_pos: write_position,
-            last_page,
+            info: info.clone(),
         }
     }
 
     pub fn from_not_initialized_state(
         state: StateDataNotInitialized<TMyPageBlob>,
         settings: AppendPageBlobSettings,
-        start_pos: usize,
+        info: &CorruptedErrorInfo,
     ) -> Self {
         Self {
             page_blob: state.page_blob,
             settings,
-            start_pos,
-            last_page: None,
+            info: info.clone(),
         }
     }
 

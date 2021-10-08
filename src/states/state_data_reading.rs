@@ -50,7 +50,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
             Ok(i32::from_le_bytes(buf))
         } else {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
-                pos: 0,
+                broken_pos: 0,
                 last_page: None,
                 msg: format!(
                     "Can not read next payload_size. Blob is corrupted. Pos:{}",
@@ -71,7 +71,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         } else {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
                 last_page: None,
-                pos: 0,
+                broken_pos: 0,
                 msg: format!(
                     "Not enought data to read payload. Blob is corrupted. Pos:{}",
                     self.seq_reader.get_blob_position()
@@ -87,7 +87,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
 
         if let Err(err) = payload_size {
             if let PageBlobAppendError::Corrupted(mut info) = err {
-                info.pos = start_pos;
+                info.broken_pos = start_pos;
                 info.last_page = last_page;
 
                 return Err(PageBlobAppendError::Corrupted(info));
@@ -100,7 +100,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
 
         if payload_size > self.settings.max_payload_size_protection {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
-                pos: start_pos,
+                broken_pos: start_pos,
                 last_page: last_page,
                 msg: format!(
                     "Payload size {} is too huge. Maximum allowed amount is {}.",
@@ -117,7 +117,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
 
         if let Err(err) = payload {
             if let PageBlobAppendError::Corrupted(mut info) = err {
-                info.pos = start_pos;
+                info.broken_pos = start_pos;
                 info.last_page = last_page;
 
                 return Err(PageBlobAppendError::Corrupted(info));

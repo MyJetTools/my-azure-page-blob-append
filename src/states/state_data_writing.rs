@@ -39,7 +39,8 @@ impl<TMyPageBlob: MyPageBlob> StateDataWriting<TMyPageBlob> {
             seq_writer: PageBlobSequenceWriter::from_corrupted(
                 src.page_blob,
                 settings,
-                src.start_pos,
+                src.info.last_page,
+                src.info.broken_pos,
             ),
         }
     }

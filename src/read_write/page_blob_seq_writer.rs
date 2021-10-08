@@ -25,13 +25,14 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
     pub fn from_corrupted(
         page_blob: TPageBlob,
         settings: &AppendPageBlobSettings,
-        write_pos: usize,
+        last_page: Option<Vec<u8>>,
+        pos: usize,
     ) -> Self {
         Self {
             page_blob: page_blob,
             max_pages_to_write: 4000,
             blob_autoressize_in_pages: settings.blob_auto_resize_in_pages,
-            write_cache: WriteCache::new(BLOB_PAGE_SIZE, None, write_pos),
+            write_cache: WriteCache::new(BLOB_PAGE_SIZE, last_page, pos),
         }
     }
 
