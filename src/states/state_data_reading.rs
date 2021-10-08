@@ -91,7 +91,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
                 pos: start_pos,
                 msg: format!(
-                    "Payload size {} is to huge. Maximum allowed amount is {}.",
+                    "Payload size {} is too huge. Maximum allowed amount is {}.",
                     payload_size, self.settings.max_payload_size_protection,
                 ),
             }));
