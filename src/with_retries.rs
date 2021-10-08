@@ -200,3 +200,50 @@ pub async fn write_pages<TMyPageBlob: MyPageBlob>(
         }
     }
 }
+
+pub async fn auto_ressize_and_save_pages<TMyPageBlob: MyPageBlob>(
+    page_blob: &mut TMyPageBlob,
+    start_page_no: usize,
+    max_pages_to_write: usize,
+    blob_autoressize_in_pages: usize,
+    payload: Vec<u8>,
+) -> Result<usize, AzureStorageError> {
+    let mut attempt_no = 1;
+
+    loop {
+        let payload_to_write = payload.to_vec();
+
+        let result = page_blob
+            .auto_ressize_and_save_pages(
+                start_page_no,
+                max_pages_to_write,
+                payload_to_write,
+                blob_autoressize_in_pages,
+            )
+            .await;
+
+        if let Ok(result) = result {
+            return Ok(result);
+        }
+
+        let err = result.err().unwrap();
+
+        match &err {
+            AzureStorageError::ContainerNotFound => {
+                crate::page_blob_utils::create_container_with_retires(page_blob).await?;
+            }
+            AzureStorageError::HyperError { err: _ } => {
+                println!(
+                    "Can not execute auto_ressize_and_save_pages because of  {:?}. Attempt {} Retrying",
+                    err, attempt_no
+                );
+                attempt_no += 1;
+
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+            _ => {
+                return Err(err);
+            }
+        }
+    }
+}

@@ -49,14 +49,14 @@ impl<TPageBlob: MyPageBlob> PageBlobSequenceWriter<TPageBlob> {
             BLOB_PAGE_SIZE,
         );
 
-        self.page_blob
-            .auto_ressize_and_save_pages(
-                page_no,
-                self.max_pages_to_write,
-                payload_to_write,
-                self.blob_autoressize_in_pages,
-            )
-            .await?;
+        crate::with_retries::auto_ressize_and_save_pages(
+            &mut self.page_blob,
+            page_no,
+            self.max_pages_to_write,
+            self.blob_autoressize_in_pages,
+            payload_to_write,
+        )
+        .await?;
 
         self.write_cache.written();
 
