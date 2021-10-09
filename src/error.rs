@@ -11,7 +11,6 @@ pub enum PageBlobAppendError {
     NotInitialized,
     Corrupted(CorruptedErrorInfo),
     AzureStorageError(AzureStorageError),
-    BlobNotFound,
     Forbidden(String),
 }
 
