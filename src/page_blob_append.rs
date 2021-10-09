@@ -21,12 +21,21 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
         }
     }
 
-    pub fn get_page_blob(&mut self) -> &mut TMyPageBlob {
+    pub fn get_page_blob_mut(&mut self) -> &mut TMyPageBlob {
         match self.state.as_mut().unwrap() {
             PageBlobAppendCacheState::NotInitialized(state) => &mut state.page_blob,
             PageBlobAppendCacheState::Reading(state) => &mut state.seq_reader.page_blob,
             PageBlobAppendCacheState::Corrupted(state) => &mut state.page_blob,
             PageBlobAppendCacheState::Writing(state) => &mut state.seq_writer.page_blob,
+        }
+    }
+
+    pub fn get_page_blob(&self) -> &TMyPageBlob {
+        match self.state.as_ref().unwrap() {
+            PageBlobAppendCacheState::NotInitialized(state) => &state.page_blob,
+            PageBlobAppendCacheState::Reading(state) => &state.seq_reader.page_blob,
+            PageBlobAppendCacheState::Corrupted(state) => &state.page_blob,
+            PageBlobAppendCacheState::Writing(state) => &state.seq_writer.page_blob,
         }
     }
 
@@ -242,7 +251,7 @@ mod tests {
         let buff_to_write = vec![5u8, 5u8, 5u8, 5u8];
         reader.append_and_write(&vec![buff_to_write]).await.unwrap();
 
-        let result_buffer = reader.get_page_blob().download().await.unwrap();
+        let result_buffer = reader.get_page_blob_mut().download().await.unwrap();
 
         assert_eq!(&[4u8, 0, 0, 0, 5, 5, 5, 5], &result_buffer[516..524]);
     }
