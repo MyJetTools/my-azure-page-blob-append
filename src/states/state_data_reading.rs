@@ -41,13 +41,13 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         self.seq_reader.get_blob_position()
     }
 
-    async fn get_message_size(&mut self) -> Result<i32, PageBlobAppendError> {
+    async fn get_message_size(&mut self) -> Result<u32, PageBlobAppendError> {
         let mut buf = [0u8; 4];
 
         let read = self.seq_reader.read(&mut buf).await?;
 
         if read {
-            Ok(i32::from_le_bytes(buf))
+            Ok(u32::from_le_bytes(buf))
         } else {
             return Err(PageBlobAppendError::Corrupted(CorruptedErrorInfo {
                 broken_pos: 0,
@@ -60,7 +60,7 @@ impl<TMyPageBlob: MyPageBlob> StateDataReading<TMyPageBlob> {
         }
     }
 
-    async fn get_payload(&mut self, msg_size: i32) -> Result<Vec<u8>, PageBlobAppendError> {
+    async fn get_payload(&mut self, msg_size: u32) -> Result<Vec<u8>, PageBlobAppendError> {
         let msg_size = msg_size as usize;
         let mut buf: Vec<u8> = vec![0; msg_size];
 
