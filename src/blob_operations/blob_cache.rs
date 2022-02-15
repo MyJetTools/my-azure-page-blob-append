@@ -4,20 +4,20 @@ use my_azure_storage_sdk::{page_blob::consts::BLOB_PAGE_SIZE, AzureStorageError}
 pub struct MyPageBlobWithCache<TPageBlob: MyPageBlob> {
     pub pages_amount: Option<usize>,
     pub page_blob: TPageBlob,
-    max_pages_to_write_per_transaction: usize,
+    max_pages_to_write_per_request: usize,
     resize_pages_ratio: usize,
 }
 
 impl<TPageBlob: MyPageBlob> MyPageBlobWithCache<TPageBlob> {
     pub fn new(
         page_blob: TPageBlob,
-        max_pages_to_write_per_transaction: usize,
+        max_pages_to_write_per_request: usize,
         resize_pages_ratio: usize,
     ) -> Self {
         Self {
             pages_amount: None,
             page_blob,
-            max_pages_to_write_per_transaction,
+            max_pages_to_write_per_request,
             resize_pages_ratio,
         }
     }
@@ -83,40 +83,13 @@ impl<TPageBlob: MyPageBlob> MyPageBlobWithCache<TPageBlob> {
             self.resize_page_blob(has_to_have_pages_amount).await?;
         }
 
-        let mut pages_to_write = payload.len() / BLOB_PAGE_SIZE;
-
-        if pages_to_write <= self.max_pages_to_write_per_transaction {
-            super::write_pages::with_retries(&self.page_blob, start_page_no, payload).await?;
-            return Ok(());
-        }
-
-        let mut start_offset = 0;
-
-        while pages_to_write > 0 {
-            let now_writing_pages_amount =
-                if pages_to_write <= self.max_pages_to_write_per_transaction {
-                    pages_to_write
-                } else {
-                    self.max_pages_to_write_per_transaction
-                };
-
-            let now_writing_payload_size = now_writing_pages_amount * BLOB_PAGE_SIZE;
-
-            let current_payload_to_write =
-                &payload[start_offset..start_offset + now_writing_payload_size];
-
-            super::write_pages::with_retries(
-                &self.page_blob,
-                start_page_no,
-                current_payload_to_write.to_vec(),
-            )
-            .await?;
-
-            start_offset += now_writing_payload_size;
-            pages_to_write -= now_writing_pages_amount;
-        }
-
-        Ok(())
+        super::write_pages::with_retries(
+            &self.page_blob,
+            start_page_no,
+            self.max_pages_to_write_per_request,
+            payload,
+        )
+        .await
     }
 
     pub async fn read_pages(

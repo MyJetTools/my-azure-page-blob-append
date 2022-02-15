@@ -24,7 +24,7 @@ pub async fn copy_blob<TMyPageBlob: MyPageBlob>(
         };
 
         let payload = super::read_pages::with_retries(src, page_no, pages_to_copy).await?;
-        super::write_pages::with_retries(dest, page_no, payload).await?;
+        super::write_pages::with_retries(dest, page_no, max_pages_per_write, payload).await?;
 
         page_no += pages_to_copy;
     }

@@ -5,14 +5,20 @@ use my_azure_storage_sdk::AzureStorageError;
 
 pub async fn with_retries<TMyPageBlob: MyPageBlob>(
     page_blob: &TMyPageBlob,
-    start_page: usize,
+    start_page_no: usize,
+    max_pages_to_write_per_request: usize,
     payload: Vec<u8>,
 ) -> Result<(), AzureStorageError> {
     let mut attempt_no = 1;
 
     loop {
-        let payload_to_write = payload.to_vec();
-        let result = page_blob.save_pages(start_page, payload_to_write).await;
+        let result = my_azure_page_blob::my_page_blob_utils::write_pages(
+            page_blob,
+            start_page_no,
+            max_pages_to_write_per_request,
+            payload.to_vec(),
+        )
+        .await;
 
         if result.is_ok() {
             return Ok(());
