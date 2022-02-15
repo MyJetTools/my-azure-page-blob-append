@@ -1,204 +1,149 @@
 use my_azure_page_blob::*;
 
 use crate::{
+    blob_operations::MyPageBlobWithCache,
     settings::AppendPageBlobSettings,
-    states::{GetNextPayloadResult, StateDataNotInitialized, StateDataReading, StateDataWriting},
-    ChangeState, PageBlobAppendCacheState, PageBlobAppendError,
+    states::{
+        DataReadingErrorResult, GetNextPayloadResult, InitToReadResult, StateDataNotInitialized,
+        StateDataReading, StateDataWriting,
+    },
+    PageBlobAppendCacheState, PageBlobAppendError,
 };
 
 pub struct PageBlobAppend<TMyPageBlob: MyPageBlob> {
-    state: Option<PageBlobAppendCacheState<TMyPageBlob>>,
+    page_blob_with_cache: MyPageBlobWithCache<TMyPageBlob>,
+    state: PageBlobAppendCacheState,
     settings: AppendPageBlobSettings,
 }
 
 impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
     pub fn new(page_blob: TMyPageBlob, settings: AppendPageBlobSettings) -> Self {
         Self {
-            state: Some(PageBlobAppendCacheState::NotInitialized(
-                StateDataNotInitialized::new(page_blob),
-            )),
+            page_blob_with_cache: MyPageBlobWithCache::new(
+                page_blob,
+                settings.max_pages_to_write_single_round_trip,
+                settings.blob_auto_resize_in_pages,
+            ),
+            state: PageBlobAppendCacheState::NotInitialized(StateDataNotInitialized::new()),
             settings,
         }
     }
 
     pub fn get_page_blob_mut(&mut self) -> &mut TMyPageBlob {
-        match self.state.as_mut().unwrap() {
-            PageBlobAppendCacheState::NotInitialized(state) => &mut state.page_blob,
-            PageBlobAppendCacheState::Reading(state) => &mut state.seq_reader.page_blob,
-            PageBlobAppendCacheState::Corrupted(state) => &mut state.page_blob,
-            PageBlobAppendCacheState::Writing(state) => &mut state.seq_writer.page_blob,
-        }
+        return &mut self.page_blob_with_cache.page_blob;
     }
 
     pub fn get_page_blob(&self) -> &TMyPageBlob {
-        match self.state.as_ref().unwrap() {
-            PageBlobAppendCacheState::NotInitialized(state) => &state.page_blob,
-            PageBlobAppendCacheState::Reading(state) => &state.seq_reader.page_blob,
-            PageBlobAppendCacheState::Corrupted(state) => &state.page_blob,
-            PageBlobAppendCacheState::Writing(state) => &state.seq_writer.page_blob,
-        }
+        return &self.page_blob_with_cache.page_blob;
     }
 
     pub async fn append_and_write<'s>(
         &mut self,
         payloads: &Vec<Vec<u8>>,
     ) -> Result<(), PageBlobAppendError> {
-        match self.state.as_mut().unwrap() {
-            PageBlobAppendCacheState::NotInitialized(_) => Err(PageBlobAppendError::NotInitialized),
-            PageBlobAppendCacheState::Reading(_) => Err(PageBlobAppendError::NotInitialized),
-            PageBlobAppendCacheState::Corrupted(state) => {
-                Err(PageBlobAppendError::Forbidden(format!(
-                    "You can not write to PageBlobAppend {}/{}. It's corrupted",
-                    state.page_blob.get_container_name(),
-                    state.page_blob.get_blob_name()
-                )))
-            }
-            PageBlobAppendCacheState::Writing(state) => state.append_and_write(payloads).await,
+        if let PageBlobAppendCacheState::Writing(state) = &mut self.state {
+            state
+                .append_and_write(&mut self.page_blob_with_cache, payloads)
+                .await?;
+            return Ok(());
         }
+
+        panic!(
+            "append_and_write operation can not be performed in {} state",
+            self.state.as_string_name()
+        );
+    }
+
+    pub async fn from_corrupted_to_write_mode(&mut self) {
+        if let PageBlobAppendCacheState::Corrupted(page_cache) = &mut self.state {
+            let mut page_cache_to_write = None;
+            std::mem::swap(page_cache, &mut page_cache_to_write);
+
+            if page_cache_to_write.is_none() {
+                panic!("Can not get page_cache from currupted state");
+            }
+
+            let mut page_cache_to_write = page_cache_to_write.unwrap();
+
+            page_cache_to_write.reset_from_current_position();
+
+            let state_data = StateDataWriting::new(page_cache_to_write);
+            self.state = PageBlobAppendCacheState::Writing(state_data);
+        } else {
+            panic!(
+                "AppendBlob has to be in corrupted state. Now state is: {}",
+                self.state.as_string_name()
+            );
+        }
+    }
+
+    pub async fn initialize_to_read_mode(
+        &mut self,
+        auto_create_if_not_exist: bool,
+    ) -> Result<(), PageBlobAppendError> {
+        let change_state = if let PageBlobAppendCacheState::NotInitialized(state) = &mut self.state
+        {
+            state
+                .init_to_read(&mut self.page_blob_with_cache, auto_create_if_not_exist)
+                .await?
+        } else {
+            panic!(
+                "Page blob append can not be intialize to read in {} mode",
+                self.state.as_string_name()
+            )
+        };
+
+        match change_state {
+            InitToReadResult::ToWriteMode(page_cache) => {
+                self.state = PageBlobAppendCacheState::Writing(StateDataWriting::new(page_cache));
+            }
+            InitToReadResult::ToReadMode => {
+                self.state = PageBlobAppendCacheState::Reading(StateDataReading::new(
+                    &self.state,
+                    self.settings,
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub async fn get_next_payload(&mut self) -> Result<Option<Vec<u8>>, PageBlobAppendError> {
-        loop {
-            match self.state.as_mut().unwrap() {
-                PageBlobAppendCacheState::NotInitialized(state) => {
-                    let new_state = state.init().await?;
-                    if let Some(new_state) = new_state {
-                        self.change_state(new_state);
+        let next_payload_result = if let PageBlobAppendCacheState::Reading(state) = &mut self.state
+        {
+            match state.get_next_payload(&mut self.page_blob_with_cache).await {
+                Ok(result) => result,
+                Err(err) => match err {
+                    DataReadingErrorResult::AzureStorageError(azure_err) => {
+                        return Err(PageBlobAppendError::AzureStorageError(azure_err));
                     }
-                }
-                PageBlobAppendCacheState::Reading(state) => {
-                    let result = state.get_next_payload().await;
-
-                    match result {
-                        Ok(result) => match result {
-                            GetNextPayloadResult::NextPayload(payload) => return Ok(Some(payload)),
-
-                            GetNextPayloadResult::ChangeState(new_state) => {
-                                self.change_state(new_state);
-                                return Ok(None);
-                            }
-                        },
-
-                        Err(err) => {
-                            self.handle_error(&err);
-                            return Err(err);
-                        }
+                    DataReadingErrorResult::Corrupted { msg, pages_cache } => {
+                        self.state = PageBlobAppendCacheState::Corrupted(Some(pages_cache));
+                        return Err(PageBlobAppendError::Corrupted(msg));
                     }
-                }
-                PageBlobAppendCacheState::Corrupted(_) => {
-                    return Err(PageBlobAppendError::Forbidden(
-                        "Getting next payload is forbidden in corrupted mode".to_string(),
-                    ));
-                }
-                PageBlobAppendCacheState::Writing(_) => return Ok(None),
+                },
             }
-        }
-    }
+        } else {
+            panic!(
+                "Getting next payload is forbidden in {} mode",
+                self.state.as_string_name()
+            );
+        };
 
-    pub async fn init_blob(
-        &mut self,
-        backup_blob: Option<&mut TMyPageBlob>,
-    ) -> Result<(), PageBlobAppendError> {
-        match self.state.as_mut().unwrap() {
-            PageBlobAppendCacheState::NotInitialized(state) => {
-                let change_state = state.init_blob().await?;
-                self.change_state(change_state);
-                Ok(())
-            }
-            PageBlobAppendCacheState::Reading(state) => {
-                let change_state = state.init_blob(backup_blob).await?;
-                self.change_state(change_state);
-                Ok(())
-            }
-            PageBlobAppendCacheState::Corrupted(state) => {
-                let change_state = state.init_blob(backup_blob).await?;
-                self.change_state(change_state);
-                Ok(())
-            }
-            PageBlobAppendCacheState::Writing(state) => {
-                Err(PageBlobAppendError::Forbidden(format!(
-                    "Operation is forbidden. PageBlobAppend {}/{} is in the {} mode",
-                    state.seq_writer.page_blob.get_container_name(),
-                    state.seq_writer.page_blob.get_blob_name(),
-                    "Writing"
-                )))
+        match next_payload_result {
+            GetNextPayloadResult::NextPayload(payload) => return Ok(Some(payload)),
+            GetNextPayloadResult::GoToWriteMode(page_cache) => {
+                self.state = PageBlobAppendCacheState::Writing(StateDataWriting::new(page_cache));
+                return Ok(None);
             }
         }
     }
 
     pub fn get_blob_position(&self) -> usize {
-        if self.state.is_none() {
-            return 0;
-        }
-        match self.state.as_ref().unwrap() {
+        match &self.state {
             PageBlobAppendCacheState::NotInitialized(_) => 0,
             PageBlobAppendCacheState::Reading(state) => state.get_blob_position(),
             PageBlobAppendCacheState::Corrupted(_) => 0,
             PageBlobAppendCacheState::Writing(state) => state.get_blob_position(),
-        }
-    }
-
-    fn handle_error(&mut self, err: &PageBlobAppendError) {
-        if let PageBlobAppendError::Corrupted(info) = err {
-            self.change_state(ChangeState::ToCorrupted(info.clone()));
-        }
-    }
-
-    fn change_state(&mut self, change_state: ChangeState) {
-        let mut old_state = None;
-        std::mem::swap(&mut old_state, &mut self.state);
-
-        match change_state {
-            ChangeState::ToReadMode => {
-                let old_state = old_state.unwrap();
-
-                match old_state {
-                    PageBlobAppendCacheState::NotInitialized(state) => {
-                        let state_data: StateDataReading<TMyPageBlob> =
-                            StateDataReading::from_not_initialized(state, self.settings);
-                        self.state = Some(PageBlobAppendCacheState::Reading(state_data));
-                    }
-                    PageBlobAppendCacheState::Reading(_) => {
-                        self.state = Some(old_state);
-                        panic!("We are not converting from ReadMode to ReadMode");
-                    }
-                    PageBlobAppendCacheState::Corrupted(_) => {
-                        self.state = Some(old_state);
-                        panic!("We are not converting from Corrupted to ReadMode");
-                    }
-                    PageBlobAppendCacheState::Writing(_) => {
-                        self.state = Some(old_state);
-                        panic!("We are not converting from Writing to ReadMode");
-                    }
-                }
-            }
-            ChangeState::ToWriteMode => match old_state.unwrap() {
-                PageBlobAppendCacheState::NotInitialized(state) => {
-                    let state_data: StateDataWriting<TMyPageBlob> =
-                        StateDataWriting::from_not_initialized_state(state, &self.settings);
-                    self.state = Some(PageBlobAppendCacheState::Writing(state_data));
-                }
-                PageBlobAppendCacheState::Reading(state) => {
-                    let state_data: StateDataWriting<TMyPageBlob> =
-                        StateDataWriting::from_reading_state(state, &self.settings);
-                    self.state = Some(PageBlobAppendCacheState::Writing(state_data));
-                }
-                PageBlobAppendCacheState::Corrupted(state) => {
-                    let state_data: StateDataWriting<TMyPageBlob> =
-                        StateDataWriting::from_corrupted_state(state, &self.settings);
-                    self.state = Some(PageBlobAppendCacheState::Writing(state_data));
-                }
-                PageBlobAppendCacheState::Writing(_) => {
-                    panic!("Can not convert from Writing to Writing state");
-                }
-            },
-            ChangeState::ToCorrupted(info) => {
-                self.state = Some(PageBlobAppendCacheState::to_corrupted(
-                    old_state.unwrap(),
-                    &info,
-                    self.settings,
-                ));
-            }
         }
     }
 }
@@ -207,27 +152,31 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
 mod tests {
     use my_azure_page_blob::MyPageBlobMock;
 
+    use crate::page_blob_utils::*;
+
     use super::*;
 
     #[tokio::test]
     async fn test_corrupted_and_restored() {
         const MSG_SIZE: i32 = 512;
 
-        let mut page_blob = MyPageBlobMock::new();
+        //Prepare page blob
+        let page_blob = MyPageBlobMock::new();
         page_blob.create_container_if_not_exist().await.unwrap();
 
         page_blob.create_if_not_exists(0).await.unwrap();
 
-        let mut builder: Vec<u8> = Vec::new();
-        builder.extend(&MSG_SIZE.to_le_bytes());
+        let mut init_payload: Vec<u8> = Vec::new();
+        init_payload.extend_from_slice(&MSG_SIZE.to_le_bytes());
 
-        builder.extend(&[3u8; MSG_SIZE as usize]);
-        builder.extend(&[120u8; (MSG_SIZE * 2) as usize]);
+        init_payload.extend_from_slice(&[3u8; MSG_SIZE as usize]);
+        init_payload.extend_from_slice(&[120u8; (MSG_SIZE * 2) as usize]);
 
-        page_blob
-            .auto_ressize_and_save_pages(0, 10, builder, 1)
-            .await
-            .unwrap();
+        extend_buffer_to_full_pages_size(&mut init_payload, 512);
+
+        page_blob.resize(4).await.unwrap();
+
+        page_blob.save_pages(0, init_payload).await.unwrap();
 
         let settings = AppendPageBlobSettings {
             blob_auto_resize_in_pages: 1,
@@ -236,6 +185,8 @@ mod tests {
             max_payload_size_protection: 1024 * 1024,
         };
         let mut reader = PageBlobAppend::new(page_blob, settings);
+
+        reader.initialize_to_read_mode(false).await.unwrap();
 
         let payload = reader.get_next_payload().await.unwrap();
 
@@ -246,7 +197,7 @@ mod tests {
         let err = payload.err().unwrap();
         assert_eq!(true, err.is_corrupted());
 
-        reader.init_blob(None).await.unwrap();
+        reader.from_corrupted_to_write_mode().await;
 
         let buff_to_write = vec![5u8, 5u8, 5u8, 5u8];
         reader.append_and_write(&vec![buff_to_write]).await.unwrap();

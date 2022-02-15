@@ -1,37 +1,54 @@
 use my_azure_page_blob::MyPageBlob;
-use my_azure_storage_sdk::AzureStorageError;
+use my_azure_storage_sdk::{page_blob::consts::BLOB_PAGE_SIZE, AzureStorageError};
 
-use crate::{ChangeState, PageBlobAppendError};
+use crate::{blob_operations::MyPageBlobWithCache, PageCache};
 
-pub struct StateDataNotInitialized<TMyPageBlob: MyPageBlob> {
-    pub page_blob: TMyPageBlob,
-    pub blob_size_in_pages: usize,
+pub struct StateDataNotInitialized;
+
+pub enum InitToReadResult {
+    ToWriteMode(PageCache),
+    ToReadMode,
 }
 
-impl<TMyPageBlob: MyPageBlob> StateDataNotInitialized<TMyPageBlob> {
-    pub fn new(page_blob: TMyPageBlob) -> Self {
-        Self {
-            page_blob,
-            blob_size_in_pages: 0,
-        }
+impl StateDataNotInitialized {
+    pub fn new() -> Self {
+        Self {}
     }
 
-    pub async fn init(&mut self) -> Result<Option<ChangeState>, PageBlobAppendError> {
-        let blob_size_in_pages =
-            crate::with_retries::get_available_pages_amount(&mut self.page_blob).await?;
+    pub async fn init_to_read<TMyPageBlob: MyPageBlob>(
+        &mut self,
+        my_page_blob: &mut MyPageBlobWithCache<TMyPageBlob>,
+        auto_create_if_not_exist: bool,
+    ) -> Result<InitToReadResult, AzureStorageError> {
+        let pages_amount = match my_page_blob.get_pages_amount().await {
+            Ok(result) => result,
+            Err(err) => {
+                if !auto_create_if_not_exist {
+                    return Err(err);
+                }
 
-        self.blob_size_in_pages = blob_size_in_pages;
+                my_page_blob.create_blob_if_not_exists(0).await?;
+                0
+            }
+        };
 
-        if self.blob_size_in_pages == 0 {
-            return Ok(Some(ChangeState::ToWriteMode));
+        //TODO - UnitTests
+        if pages_amount > 0 {
+            Ok(InitToReadResult::ToReadMode)
         } else {
-            return Ok(Some(ChangeState::ToReadMode));
+            Ok(InitToReadResult::ToWriteMode(PageCache::new(
+                vec![],
+                0,
+                0,
+                BLOB_PAGE_SIZE,
+            )))
         }
     }
 
-    pub async fn init_blob(&mut self) -> Result<ChangeState, AzureStorageError> {
-        crate::with_retries::create_container_if_not_exist(&mut self.page_blob).await?;
-        crate::with_retries::create_blob_if_not_exists(&mut self.page_blob, 0).await?;
-        Ok(ChangeState::ToWriteMode)
+    pub async fn init_blob<TMyPageBlob: MyPageBlob>(
+        &self,
+        my_page_blob: &mut MyPageBlobWithCache<TMyPageBlob>,
+    ) -> Result<(), AzureStorageError> {
+        my_page_blob.create_blob_if_not_exists(0).await
     }
 }

@@ -1,15 +1,8 @@
 use my_azure_storage_sdk::AzureStorageError;
-#[derive(Debug, Clone)]
-pub struct CorruptedErrorInfo {
-    pub broken_pos: usize,
-    pub msg: String,
-    pub last_page: Option<Vec<u8>>,
-}
-
 #[derive(Debug)]
 pub enum PageBlobAppendError {
     NotInitialized,
-    Corrupted(CorruptedErrorInfo),
+    Corrupted(String),
     AzureStorageError(AzureStorageError),
     Forbidden(String),
 }

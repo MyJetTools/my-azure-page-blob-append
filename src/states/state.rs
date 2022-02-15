@@ -1,34 +1,15 @@
-use my_azure_page_blob::MyPageBlob;
+use crate::PageCache;
 
-use crate::{error::CorruptedErrorInfo, AppendPageBlobSettings};
+use super::{StateDataNotInitialized, StateDataReading, StateDataWriting};
 
-use super::{StateDataCorrupted, StateDataNotInitialized, StateDataReading, StateDataWriting};
-
-pub enum PageBlobAppendCacheState<TMyPageBlob: MyPageBlob> {
-    NotInitialized(StateDataNotInitialized<TMyPageBlob>),
-    Reading(StateDataReading<TMyPageBlob>),
-    Corrupted(StateDataCorrupted<TMyPageBlob>),
-    Writing(StateDataWriting<TMyPageBlob>),
+pub enum PageBlobAppendCacheState {
+    NotInitialized(StateDataNotInitialized),
+    Reading(StateDataReading),
+    Corrupted(Option<PageCache>),
+    Writing(StateDataWriting),
 }
 
-impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
-    pub fn to_corrupted(self, info: &CorruptedErrorInfo, settings: AppendPageBlobSettings) -> Self {
-        match self {
-            PageBlobAppendCacheState::NotInitialized(state) => PageBlobAppendCacheState::Corrupted(
-                StateDataCorrupted::from_not_initialized_state(state, settings, info),
-            ),
-            PageBlobAppendCacheState::Reading(state) => PageBlobAppendCacheState::Corrupted(
-                StateDataCorrupted::from_reading_state(state, settings, info),
-            ),
-            _ => {
-                panic!(
-                    "PageBlobAppend can not be converted to corrupted state from the state {}",
-                    self.as_string_name()
-                )
-            }
-        }
-    }
-
+impl PageBlobAppendCacheState {
     pub fn as_string_name(&self) -> &str {
         match self {
             PageBlobAppendCacheState::NotInitialized(_) => "NotInitialized",
@@ -37,10 +18,4 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppendCacheState<TMyPageBlob> {
             PageBlobAppendCacheState::Writing(_) => "Writing",
         }
     }
-}
-
-pub enum ChangeState {
-    ToReadMode,
-    ToWriteMode,
-    ToCorrupted(CorruptedErrorInfo),
 }
