@@ -7,7 +7,7 @@ use crate::{
         DataReadingErrorResult, GetNextPayloadResult, InitToReadResult, StateDataNotInitialized,
         StateDataReading, StateDataWriting,
     },
-    PageBlobAppendCacheState, PageBlobAppendError,
+    PageBlobAppendCacheState, PageBlobAppendError, PageCache,
 };
 
 pub struct PageBlobAppend<TMyPageBlob: MyPageBlob> {
@@ -54,27 +54,50 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
         );
     }
 
-    pub async fn from_corrupted_to_write_mode(&mut self) {
-        if let PageBlobAppendCacheState::Corrupted(page_cache) = &mut self.state {
-            let mut page_cache_to_write = None;
-            std::mem::swap(page_cache, &mut page_cache_to_write);
+    pub async fn force_to_write_mode(&mut self) -> Result<(), PageBlobAppendError> {
+        match &mut self.state {
+            PageBlobAppendCacheState::Corrupted(page_cache) => {
+                let mut page_cache_to_write = None;
+                std::mem::swap(page_cache, &mut page_cache_to_write);
 
-            if page_cache_to_write.is_none() {
-                panic!("Can not get page_cache from currupted state");
+                if page_cache_to_write.is_none() {
+                    panic!("Can not get page_cache from currupted state");
+                }
+
+                self.force_switch_to_write_mode(page_cache_to_write.unwrap())
+                    .await?;
+
+                Ok(())
             }
 
-            let mut page_cache_to_write = page_cache_to_write.unwrap();
+            PageBlobAppendCacheState::Reading(state) => {
+                let page_cache = state.dispose_pages_cache();
+                self.force_switch_to_write_mode(page_cache).await?;
+                Ok(())
+            }
 
-            page_cache_to_write.reset_from_current_position();
-
-            let state_data = StateDataWriting::new(page_cache_to_write);
-            self.state = PageBlobAppendCacheState::Writing(state_data);
-        } else {
-            panic!(
-                "AppendBlob has to be in corrupted state. Now state is: {}",
-                self.state.as_string_name()
-            );
+            _ => {
+                panic!(
+                    "AppendBlob can not be changed to write mode from the state {}",
+                    self.state.as_string_name()
+                );
+            }
         }
+    }
+
+    async fn force_switch_to_write_mode(
+        &mut self,
+        page_cache: PageCache,
+    ) -> Result<(), PageBlobAppendError> {
+        let mut state_data = StateDataWriting::new(page_cache);
+
+        state_data
+            .reset_current_position_as_end_marker(&mut self.page_blob_with_cache)
+            .await?;
+
+        self.state = PageBlobAppendCacheState::Writing(state_data);
+
+        Ok(())
     }
 
     pub async fn initialize_to_read_mode(
@@ -146,15 +169,40 @@ impl<TMyPageBlob: MyPageBlob> PageBlobAppend<TMyPageBlob> {
             PageBlobAppendCacheState::Writing(state) => state.get_blob_position(),
         }
     }
+
+    pub fn is_reading_mode(&self) -> bool {
+        match &self.state {
+            PageBlobAppendCacheState::NotInitialized(_) => false,
+            PageBlobAppendCacheState::Reading(_) => true,
+            PageBlobAppendCacheState::Corrupted(_) => false,
+            PageBlobAppendCacheState::Writing(_) => false,
+        }
+    }
+
+    pub fn is_writing_mode(&self) -> bool {
+        match &self.state {
+            PageBlobAppendCacheState::NotInitialized(_) => false,
+            PageBlobAppendCacheState::Reading(_) => false,
+            PageBlobAppendCacheState::Corrupted(_) => false,
+            PageBlobAppendCacheState::Writing(_) => true,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use my_azure_page_blob::MyPageBlobMock;
+    use my_azure_storage_sdk::page_blob::consts::BLOB_PAGE_SIZE;
 
     use crate::page_blob_utils::*;
 
     use super::*;
+
+    fn made_uploadedble(buffer: &mut Vec<u8>) {
+        while buffer.len() < BLOB_PAGE_SIZE {
+            buffer.push(0u8);
+        }
+    }
 
     #[tokio::test]
     async fn test_corrupted_and_restored() {
@@ -197,7 +245,7 @@ mod tests {
         let err = payload.err().unwrap();
         assert_eq!(true, err.is_corrupted());
 
-        reader.from_corrupted_to_write_mode().await;
+        reader.force_to_write_mode().await.unwrap();
 
         let buff_to_write = vec![5u8, 5u8, 5u8, 5u8];
         reader.append_and_write(&vec![buff_to_write]).await.unwrap();
@@ -205,5 +253,41 @@ mod tests {
         let result_buffer = reader.get_page_blob_mut().download().await.unwrap();
 
         assert_eq!(&[4u8, 0, 0, 0, 5, 5, 5, 5], &result_buffer[516..524]);
+    }
+
+    #[tokio::test]
+    async fn test_switch_to_write_mode() {
+        let page_blob = MyPageBlobMock::new();
+
+        page_blob.create_container_if_not_exist().await.unwrap();
+
+        page_blob.create_if_not_exists(1).await.unwrap();
+
+        let mut payload_to_upload = vec![3u8, 0u8, 0u8, 0u8, 1u8, 2u8, 3u8, 0u8, 0u8, 0u8, 0u8];
+
+        made_uploadedble(&mut payload_to_upload);
+
+        page_blob.save_pages(0, payload_to_upload).await.unwrap();
+
+        let settings = AppendPageBlobSettings {
+            blob_auto_resize_in_pages: 1,
+            cache_capacity_in_pages: 10,
+            max_pages_to_write_single_round_trip: 1000,
+            max_payload_size_protection: 1024 * 1024,
+        };
+
+        let mut reader = PageBlobAppend::new(page_blob, settings);
+
+        reader.initialize_to_read_mode(false).await.unwrap();
+
+        let result = reader.get_next_payload().await.unwrap();
+        assert_eq!(true, result.is_some());
+        assert_eq!(true, reader.is_reading_mode());
+
+        let result = reader.get_next_payload().await.unwrap();
+        assert_eq!(true, result.is_none());
+        assert_eq!(true, reader.is_writing_mode());
+
+        assert_eq!(7, reader.get_blob_position());
     }
 }

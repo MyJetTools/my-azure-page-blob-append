@@ -1,5 +1,10 @@
 use crate::{page_blob_utils::*, PayloadsWriter};
 
+pub struct ResetPageUpdateContent {
+    pub page_no: usize,
+    pub payload: Vec<u8>,
+}
+
 pub struct PageCache {
     pub data: Vec<u8>,
     page_id_offset: usize,
@@ -8,16 +13,11 @@ pub struct PageCache {
 }
 
 impl PageCache {
-    pub fn new(
-        data: Vec<u8>,
-        page_id_offset: usize,
-        blob_position: usize,
-        page_size: usize,
-    ) -> Self {
+    pub fn new(page_size: usize) -> Self {
         Self {
-            data,
-            page_id_offset,
-            blob_position,
+            data: vec![],
+            page_id_offset: 0,
+            blob_position: 0,
             page_size,
         }
     }
@@ -69,8 +69,12 @@ impl PageCache {
         self.page_id_offset += pages_to_gc;
     }
 
-    pub fn try_to_get_next_slice<'s>(&'s mut self, size: usize) -> Result<&'s [u8], usize> {
-        let position_in_cache = self.get_position_in_cache();
+    pub fn try_to_get_next_slice<'s>(
+        &'s mut self,
+        size: usize,
+        offset: usize,
+    ) -> Result<&'s [u8], usize> {
+        let position_in_cache = self.get_position_in_cache() + offset;
 
         if position_in_cache + size > self.data.len() {
             return Err(position_in_cache + size - self.data.len());
@@ -108,10 +112,23 @@ impl PageCache {
         self.blob_position += delta;
     }
 
-    pub fn reset_from_current_position(&mut self) {
+    pub fn reset_from_current_position(&mut self) -> ResetPageUpdateContent {
         let position_in_cache = self.get_position_in_cache();
         for i in position_in_cache..self.data.len() {
             self.data[i] = 0;
+        }
+
+        let start_of_the_page_offset = position_in_cache / self.page_size * self.page_size;
+
+        let mut size = self.data.len() - start_of_the_page_offset;
+
+        if size > self.page_size * 2 {
+            size = self.page_size * 2;
+        }
+
+        ResetPageUpdateContent {
+            page_no: self.blob_position / self.page_size,
+            payload: self.data[start_of_the_page_offset..start_of_the_page_offset + size].to_vec(),
         }
     }
 }
@@ -133,7 +150,7 @@ mod tests {
     #[test]
     fn test_next_page_no_to_load() {
         const PAGE_SIZE: usize = 8;
-        let mut read_cache = PageCache::new(vec![], 0, 0, PAGE_SIZE);
+        let mut read_cache = PageCache::new(PAGE_SIZE);
 
         assert_eq!(0, read_cache.get_next_page_after_cache());
 
@@ -148,9 +165,9 @@ mod tests {
     fn test_we_reading_data_from_empty_cache() {
         const PAGE_SIZE: usize = 8;
 
-        let mut read_cache = PageCache::new(vec![], 0, 0, PAGE_SIZE);
+        let mut read_cache = PageCache::new(PAGE_SIZE);
 
-        match read_cache.try_to_get_next_slice(4) {
+        match read_cache.try_to_get_next_slice(4, 0) {
             Ok(_) => {
                 panic!("Should not be here")
             }
@@ -163,25 +180,25 @@ mod tests {
     #[test]
     fn test_we_reading_data_several_cases() {
         const PAGE_SIZE: usize = 8;
-        let mut read_cache = PageCache::new(vec![], 0, 0, PAGE_SIZE);
+        let mut read_cache = PageCache::new(PAGE_SIZE);
         let page_to_upload = generate_test_array(PAGE_SIZE);
         read_cache.append_payload_from_blob(page_to_upload.as_slice());
 
         {
-            let slice = read_cache.try_to_get_next_slice(4).unwrap();
+            let slice = read_cache.try_to_get_next_slice(4, 0).unwrap();
             assert_eq!(vec![0u8, 1u8, 2u8, 3u8], slice);
         }
 
         read_cache.advance_blob_position(4);
 
         {
-            let slice = read_cache.try_to_get_next_slice(2).unwrap();
+            let slice = read_cache.try_to_get_next_slice(2, 0).unwrap();
             assert_eq!(vec![4u8, 5u8], slice);
         }
 
         read_cache.advance_blob_position(2);
 
-        match read_cache.try_to_get_next_slice(8) {
+        match read_cache.try_to_get_next_slice(8, 0) {
             Ok(_) => {
                 panic!("Should not be here")
             }
@@ -194,15 +211,15 @@ mod tests {
     #[test]
     pub fn test_gc_read_cache() {
         const PAGE_SIZE: usize = 8;
-        let mut read_cache = PageCache::new(vec![], 0, 0, PAGE_SIZE);
+        let mut read_cache = PageCache::new(PAGE_SIZE);
         let page_to_upload = generate_test_array(PAGE_SIZE * 3);
 
         read_cache.append_payload_from_blob(page_to_upload.as_slice());
 
-        read_cache.try_to_get_next_slice(10).unwrap();
+        read_cache.try_to_get_next_slice(10, 0).unwrap();
         read_cache.advance_blob_position(10);
 
-        match read_cache.try_to_get_next_slice(24) {
+        match read_cache.try_to_get_next_slice(24, 0) {
             Ok(_) => {
                 panic!("Should not be here")
             }
@@ -224,15 +241,15 @@ mod tests {
     #[test]
     pub fn test_gc_when_we_have_alot_of_pages() {
         const PAGE_SIZE: usize = 8;
-        let mut read_cache = PageCache::new(vec![], 0, 0, PAGE_SIZE);
+        let mut read_cache = PageCache::new(PAGE_SIZE);
         let page_to_upload = generate_test_array(PAGE_SIZE * 20);
 
         read_cache.append_payload_from_blob(page_to_upload.as_slice());
 
-        read_cache.try_to_get_next_slice(155).unwrap();
+        read_cache.try_to_get_next_slice(155, 0).unwrap();
         read_cache.advance_blob_position(155);
 
-        match read_cache.try_to_get_next_slice(24) {
+        match read_cache.try_to_get_next_slice(24, 0) {
             Ok(_) => {
                 panic!("Should not be here")
             }
@@ -246,15 +263,34 @@ mod tests {
         assert_eq!(11, read_cache.get_position_in_cache());
         assert_eq!(155, read_cache.blob_position);
 
-        let result = read_cache.try_to_get_next_slice(4).unwrap();
+        let result = read_cache.try_to_get_next_slice(4, 0).unwrap();
 
         assert_eq!(vec![155, 156, 157, 158], result);
     }
 
     #[test]
+    fn test_gc_case_one() {
+        const PAGE_SIZE: usize = 8;
+        let mut read_cache = PageCache::new(PAGE_SIZE);
+        let test_payload = generate_test_array(512);
+
+        read_cache.append_payload_from_blob(test_payload.as_slice());
+
+        read_cache.advance_blob_position(7);
+        read_cache.gc(1);
+
+        assert_eq!(0, read_cache.page_id_offset);
+
+        read_cache.advance_blob_position(1);
+        read_cache.gc(1);
+
+        assert_eq!(1, read_cache.page_id_offset);
+    }
+
+    #[test]
     pub fn test_add_new_content() {
         const PAGE_SIZE: usize = 8;
-        let mut pages_cache = PageCache::new(vec![], 0, 0, PAGE_SIZE);
+        let mut pages_cache = PageCache::new(PAGE_SIZE);
 
         pages_cache.write(vec![1u8, 1u8, 1u8, 1u8].as_slice(), true);
 
@@ -286,6 +322,112 @@ mod tests {
                 4u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8 //Page 3
             ],
             pages_cache.get_payload()
+        );
+    }
+
+    #[test]
+    pub fn test_reset_position_at_first_page_no_gc() {
+        const PAGE_SIZE: usize = 8;
+        let mut pages_cache = PageCache::new(PAGE_SIZE);
+
+        let test_payload = generate_test_array(512);
+
+        pages_cache.append_payload_from_blob(test_payload.as_slice());
+
+        pages_cache.advance_blob_position(4);
+
+        let reset_result = pages_cache.reset_from_current_position();
+
+        assert_eq!(0, reset_result.page_no);
+
+        assert_eq!(
+            &[0u8, 1u8, 2u8, 3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+            reset_result.payload.as_slice()
+        );
+    }
+
+    #[test]
+    pub fn test_reset_position_at_very_end_of_first_page_no_gc() {
+        const PAGE_SIZE: usize = 8;
+        let mut pages_cache = PageCache::new(PAGE_SIZE);
+
+        let test_payload = generate_test_array(512);
+
+        pages_cache.append_payload_from_blob(test_payload.as_slice());
+
+        pages_cache.advance_blob_position(7);
+
+        let reset_result = pages_cache.reset_from_current_position();
+
+        assert_eq!(0, reset_result.page_no);
+
+        assert_eq!(
+            &[0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+            reset_result.payload.as_slice()
+        );
+    }
+
+    #[test]
+    pub fn test_reset_position_at_very_start_of_second_page_no_gc() {
+        const PAGE_SIZE: usize = 8;
+        let mut pages_cache = PageCache::new(PAGE_SIZE);
+
+        let test_payload = generate_test_array(512);
+
+        pages_cache.append_payload_from_blob(test_payload.as_slice());
+
+        pages_cache.advance_blob_position(8);
+
+        let reset_result = pages_cache.reset_from_current_position();
+
+        assert_eq!(1, reset_result.page_no);
+
+        assert_eq!(
+            &[0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+            reset_result.payload.as_slice()
+        );
+    }
+
+    #[test]
+    pub fn test_reset_position_at_middle_start_of_second_page_no_gc() {
+        const PAGE_SIZE: usize = 8;
+        let mut pages_cache = PageCache::new(PAGE_SIZE);
+
+        let test_payload = generate_test_array(512);
+
+        pages_cache.append_payload_from_blob(test_payload.as_slice());
+
+        pages_cache.advance_blob_position(10);
+
+        let reset_result = pages_cache.reset_from_current_position();
+
+        assert_eq!(1, reset_result.page_no);
+
+        assert_eq!(
+            &[8u8, 9u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+            reset_result.payload.as_slice()
+        );
+    }
+
+    #[test]
+    pub fn test_reset_position_at_middle_start_of_second_page_with_gc() {
+        const PAGE_SIZE: usize = 8;
+        let mut pages_cache = PageCache::new(PAGE_SIZE);
+
+        let test_payload = generate_test_array(512);
+
+        pages_cache.append_payload_from_blob(test_payload.as_slice());
+
+        pages_cache.advance_blob_position(10);
+        pages_cache.gc(1);
+
+        let reset_result = pages_cache.reset_from_current_position();
+
+        assert_eq!(1, reset_result.page_no);
+
+        assert_eq!(
+            &[8u8, 9u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+            reset_result.payload.as_slice()
         );
     }
 }

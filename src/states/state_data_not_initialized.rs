@@ -37,9 +37,6 @@ impl StateDataNotInitialized {
             Ok(InitToReadResult::ToReadMode)
         } else {
             Ok(InitToReadResult::ToWriteMode(PageCache::new(
-                vec![],
-                0,
-                0,
                 BLOB_PAGE_SIZE,
             )))
         }

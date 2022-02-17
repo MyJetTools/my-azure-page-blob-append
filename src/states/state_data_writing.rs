@@ -16,6 +16,19 @@ impl StateDataWriting {
         self.page_cache.get_blob_position()
     }
 
+    pub async fn reset_current_position_as_end_marker<'s, TMyPageBlob: MyPageBlob>(
+        &mut self,
+        page_blob: &mut MyPageBlobWithCache<TMyPageBlob>,
+    ) -> Result<(), PageBlobAppendError> {
+        let pages_to_update = self.page_cache.reset_from_current_position();
+
+        page_blob
+            .auto_resize_and_save_pages(pages_to_update.page_no, pages_to_update.payload)
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn append_and_write<'s, TMyPageBlob: MyPageBlob>(
         &mut self,
         page_blob: &mut MyPageBlobWithCache<TMyPageBlob>,
@@ -58,7 +71,7 @@ mod tests {
 
         let mut my_page_blob = MyPageBlobWithCache::new(page_blob, 10, 1);
 
-        let page_cache = PageCache::new(vec![], 0, 0, BLOB_PAGE_SIZE);
+        let page_cache = PageCache::new(BLOB_PAGE_SIZE);
         let mut seq_writer = StateDataWriting::new(page_cache);
 
         let payloads = vec![vec![1u8, 1u8, 1u8], vec![2u8, 2u8, 2u8, 2u8]];

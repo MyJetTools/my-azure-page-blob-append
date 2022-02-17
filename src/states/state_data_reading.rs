@@ -1,15 +1,13 @@
 use my_azure_page_blob::MyPageBlob;
-use my_azure_storage_sdk::AzureStorageError;
+use my_azure_storage_sdk::{page_blob::consts::BLOB_PAGE_SIZE, AzureStorageError};
 
 use crate::{
-    blob_operations::MyPageBlobWithCache,
-    sequence_reader::{PageBlobSequenceReader, PageBlobSequenceReaderError},
-    settings::AppendPageBlobSettings,
-    PageBlobAppendCacheState, PageCache,
+    blob_operations::MyPageBlobWithCache, sequence_reader::PageBlobSequenceReaderError,
+    settings::AppendPageBlobSettings, PageBlobAppendCacheState, PageCache,
 };
 
 const PAYLOAD_SIZE_LEN: usize = 4;
-const KEEP_PAGES_AFTER_GC: usize = 2;
+
 pub enum DataReadingErrorResult {
     AzureStorageError(AzureStorageError),
     Corrupted { msg: String, pages_cache: PageCache },
@@ -21,9 +19,10 @@ pub enum GetNextPayloadResult {
 }
 
 pub struct StateDataReading {
-    pub seq_reader: Option<PageBlobSequenceReader>,
+    read_cache: Option<PageCache>,
     pub pages_have_read: usize,
     pub settings: AppendPageBlobSettings,
+    advance_from_previous_payload: Option<usize>,
 }
 
 impl StateDataReading {
@@ -41,26 +40,27 @@ impl StateDataReading {
 
     fn from_not_initialized(settings: AppendPageBlobSettings) -> Self {
         Self {
-            seq_reader: PageBlobSequenceReader::new(settings.cache_capacity_in_pages).into(),
+            read_cache: PageCache::new(BLOB_PAGE_SIZE).into(),
             pages_have_read: 0,
             settings,
+            advance_from_previous_payload: None,
         }
     }
 
-    pub fn get_pages_cache(&mut self) -> PageCache {
+    pub fn dispose_pages_cache(&mut self) -> PageCache {
         let mut result = None;
 
-        std::mem::swap(&mut self.seq_reader, &mut result);
+        std::mem::swap(&mut self.read_cache, &mut result);
 
         if result.is_none() {
             panic!("We are removing page cache for the second time");
         }
 
-        result.unwrap().read_cache
+        result.unwrap()
     }
 
-    fn get_seq_reader(&self) -> &PageBlobSequenceReader {
-        match &self.seq_reader {
+    fn get_pages_cache(&self) -> &PageCache {
+        match &self.read_cache {
             Some(reader) => reader,
             None => {
                 panic!("Can not get sequence reader. Object has been already disposed");
@@ -68,8 +68,8 @@ impl StateDataReading {
         }
     }
 
-    fn get_seq_reader_mut(&mut self) -> &mut PageBlobSequenceReader {
-        match &mut self.seq_reader {
+    fn get_pages_cache_mut(&mut self) -> &mut PageCache {
+        match &mut self.read_cache {
             Some(reader) => reader,
             None => {
                 panic!("Can not get sequence reader. Object has been already disposed");
@@ -77,17 +77,28 @@ impl StateDataReading {
         }
     }
     pub fn get_blob_position(&self) -> usize {
-        self.get_seq_reader().read_cache.get_blob_position()
+        self.get_pages_cache().get_blob_position()
     }
 
     async fn download_payload<TMyPageBlob: MyPageBlob>(
         &mut self,
         page_blob: &mut MyPageBlobWithCache<TMyPageBlob>,
         buf: &mut [u8],
+        offset: usize,
     ) -> Result<(), DataReadingErrorResult> {
-        let seq_reader = self.get_seq_reader_mut();
+        let minimal_pages_amount_to_upload = self.settings.cache_capacity_in_pages;
 
-        match seq_reader.read_buffer(page_blob, buf).await {
+        let pages_cache = self.get_pages_cache_mut();
+
+        match crate::sequence_reader::read_buffer(
+            pages_cache,
+            page_blob,
+            buf,
+            minimal_pages_amount_to_upload,
+            offset,
+        )
+        .await
+        {
             Ok(_) => Ok(()),
             Err(err) => match err {
                 PageBlobSequenceReaderError::AzureStorageError(azure_error) => {
@@ -96,11 +107,11 @@ impl StateDataReading {
                 PageBlobSequenceReaderError::NoSuchAmountToRead => {
                     let  msg= format!(
                         "Can not read next payload_size. Not enough data in blob. Blob is corrupted. Pos:{}",
-                        seq_reader.read_cache.get_blob_position()
+                        pages_cache.get_blob_position()
                     );
                     Err(DataReadingErrorResult::Corrupted {
                         msg,
-                        pages_cache: self.get_pages_cache(),
+                        pages_cache: self.dispose_pages_cache(),
                     })
                 }
             },
@@ -112,7 +123,7 @@ impl StateDataReading {
         page_blob: &mut MyPageBlobWithCache<TMyPageBlob>,
     ) -> Result<u32, DataReadingErrorResult> {
         let mut buf = [0u8; PAYLOAD_SIZE_LEN];
-        self.download_payload(page_blob, &mut buf).await?;
+        self.download_payload(page_blob, &mut buf, 0).await?;
         Ok(u32::from_le_bytes(buf))
     }
 
@@ -122,7 +133,8 @@ impl StateDataReading {
         payload_size: usize,
     ) -> Result<Vec<u8>, DataReadingErrorResult> {
         let mut buf: Vec<u8> = vec![0; payload_size];
-        self.download_payload(page_blob, &mut buf).await?;
+        self.download_payload(page_blob, &mut buf, PAYLOAD_SIZE_LEN)
+            .await?;
         Ok(buf)
     }
 
@@ -130,6 +142,13 @@ impl StateDataReading {
         &mut self,
         page_blob: &mut MyPageBlobWithCache<TMyPageBlob>,
     ) -> Result<GetNextPayloadResult, DataReadingErrorResult> {
+        if let Some(advance_from_previous_payload) = self.advance_from_previous_payload {
+            self.get_pages_cache_mut()
+                .advance_blob_position(advance_from_previous_payload);
+
+            self.advance_from_previous_payload = None;
+        }
+
         let payload_size = self.get_message_size(page_blob).await?;
 
         if payload_size > self.settings.max_payload_size_protection {
@@ -142,25 +161,18 @@ impl StateDataReading {
 
             return Err(DataReadingErrorResult::Corrupted {
                 msg,
-                pages_cache: self.get_pages_cache(),
+                pages_cache: self.dispose_pages_cache(),
             });
         }
 
         if payload_size == 0 {
-            let pages_cache = self.get_pages_cache();
+            let pages_cache = self.dispose_pages_cache();
             return Ok(GetNextPayloadResult::GoToWriteMode(pages_cache));
         }
 
-        self.get_seq_reader_mut()
-            .read_cache
-            .advance_blob_position(PAYLOAD_SIZE_LEN);
-
         let payload = self.get_payload(page_blob, payload_size as usize).await?;
 
-        let seq_reader = self.get_seq_reader_mut();
-
-        seq_reader.read_cache.advance_blob_position(payload.len());
-        seq_reader.read_cache.gc(KEEP_PAGES_AFTER_GC);
+        self.advance_from_previous_payload = Some(payload.len() + PAYLOAD_SIZE_LEN);
 
         return Ok(GetNextPayloadResult::NextPayload(payload));
     }
